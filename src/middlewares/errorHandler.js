@@ -22,7 +22,8 @@ const errorHandler = (err, req, res, next) => {
   error.message = err.message;
 
   // Log error
-  console.error('Error:', err);
+  const logger = require('../utils/logger');
+  logger.error('Request error', err);
 
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
