@@ -2,7 +2,7 @@ import express from 'express';
 const router = express.Router();
 
 import { adminLogin, getProfile, changePassword, forgotPassword, resetPassword } from '../../controllers/admin/adminAuthController';
-import { listAdmins, createAdmin, updateAdmin, deleteAdmin } from '../../controllers/admin/adminManagementController';
+import { listAdmins, createAdmin, updateAdmin, updateAdminPassword, deleteAdmin } from '../../controllers/admin/adminManagementController';
 import { createPermission, listPermissions, updatePermission, deletePermission } from '../../controllers/admin/permissionController';
 import { adminProtect, requireRole } from '../../middlewares/admin/adminAuth';
 import Admin from '../../models/Admin';
@@ -33,6 +33,7 @@ router.put('/change-password', adminProtect, changePassword);
 // Superadmin-only admin management
 router.get('/admins', adminProtect, requireRole('superadmin'), listAdmins);
 router.post('/admins', adminProtect, requireRole('superadmin'), createAdmin);
+router.put('/admins/:id/password', adminProtect, requireRole('superadmin'), updateAdminPassword);
 router.put('/admins/:id', adminProtect, requireRole('superadmin'), updateAdmin);
 router.delete('/admins/:id', adminProtect, requireRole('superadmin'), deleteAdmin);
 

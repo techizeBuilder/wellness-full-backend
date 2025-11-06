@@ -124,6 +124,85 @@ const updateAdmin = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: { admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role, permissions: admin.permissions, isActive: admin.isActive } } });
 });
 
+// Update admin password (superadmin only)
+const updateAdminPassword = asyncHandler(async (req, res) => {
+  const id = req.params.id;
+  const { newPassword } = req.body;
+
+  if (!newPassword) {
+    return res.status(400).json({ success: false, message: 'Password is required' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 6 characters long' });
+  }
+
+  const admin = await Admin.findById(id);
+  if (!admin) {
+    return res.status(404).json({ success: false, message: 'Admin not found' });
+  }
+
+  // Update password
+  admin.password = newPassword;
+  await admin.save();
+
+  // Send email notification about password change
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9;">
+      <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="color: #2c5e6b; margin: 0;">Password Updated</h1>
+          <p style="color: #666; font-size: 16px;">Wellness App Admin Panel</p>
+        </div>
+        
+        <p style="font-size: 16px; color: #333;">Hello <strong>${admin.name}</strong>,</p>
+        
+        <p style="font-size: 16px; color: #333; line-height: 1.6;">
+          Your admin account password has been updated by a system administrator. 
+          If you did not request this change, please contact the system administrator immediately.
+        </p>
+        
+        <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
+          <p style="margin: 0; font-size: 14px; color: #856404;">
+            <strong>Security Notice:</strong> If you did not request this password change, please contact the system administrator immediately.
+          </p>
+        </div>
+        
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/login" 
+             style="background-color: #2c5e6b; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+            Access Admin Panel
+          </a>
+        </div>
+        
+        <p style="font-size: 14px; color: #666; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+          © 2025 Techizebuilder. All rights reserved.<br>
+          If you have any questions, please contact the system administrator.
+        </p>
+      </div>
+    </div>
+  `;
+
+  try {
+    const emailResult = await sendEmail({ 
+      email: admin.email, 
+      subject: 'Password Updated - Wellness App Admin', 
+      html 
+    });
+    
+    if (emailResult.success) {
+      console.log(`Password update notification sent successfully to ${admin.email}, messageId: ${emailResult.messageId}`);
+    } else {
+      console.error(`Failed to send password update notification to ${admin.email}:`, emailResult.error);
+    }
+  } catch (err) {
+    // Log but continue - don't fail password update if email fails
+    console.error('Failed to send password update notification to', admin.email, ':', err.message);
+  }
+
+  res.status(200).json({ success: true, message: 'Password updated successfully' });
+});
+
 // Delete admin (hard delete)
 const deleteAdmin = asyncHandler(async (req, res) => {
   const id = req.params.id;
@@ -141,5 +220,6 @@ export {
   listAdmins,
   createAdmin,
   updateAdmin,
+  updateAdminPassword,
   deleteAdmin
 };
