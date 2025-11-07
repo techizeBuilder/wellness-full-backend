@@ -12,11 +12,11 @@ import {
   toggleExpertVerification
 } from '../../controllers/admin/expertController';
 
-import { adminProtect, requireRole } from '../../middlewares/admin/adminAuth';
+import { adminProtect, hasPermission } from '../../middlewares/admin/adminAuth';
 
-// All routes require admin authentication and superadmin role
+// All routes require admin authentication and manage_experts permission
 router.use(adminProtect);
-router.use(requireRole('superadmin'));
+router.use(hasPermission('manage_experts'));
 
 // GET /api/admin/experts/stats - Get expert statistics
 router.get('/stats', getExpertStats);
