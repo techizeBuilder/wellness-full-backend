@@ -234,8 +234,13 @@ class AuthService implements IAuthService {
 
     // Set new password
     user.password = newPassword;
-    user.passwordResetToken = undefined;
-    user.passwordResetExpire = undefined;
+    if ('passwordResetToken' in user) {
+      user.passwordResetToken = undefined;
+      user.passwordResetExpire = undefined;
+    } else {
+      (user as IExpert).resetPasswordToken = undefined;
+      (user as IExpert).resetPasswordExpire = undefined;
+    }
     await user.save();
 
     return { message: MESSAGES.AUTH.PASSWORD_RESET_SUCCESS };

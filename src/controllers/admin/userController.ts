@@ -33,7 +33,7 @@ const getUserStats = asyncHandler(async (req, res) => {
 const getUsers = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, search, status } = req.query;
   
-  let query = {};
+  const query: Record<string, unknown> = {};
   
   // Add search functionality
   if (search) {
@@ -49,12 +49,14 @@ const getUsers = asyncHandler(async (req, res) => {
     query.isActive = status === 'active';
   }
   
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(limit) || 10;
+  const skip = (pageNumber - 1) * limitNumber;
   
   const users = await User.find(query)
     .select('-password')
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit))
+    .limit(limitNumber)
     .skip(skip);
     
   // Transform users to include status field
@@ -71,8 +73,8 @@ const getUsers = asyncHandler(async (req, res) => {
     data: {
       users: transformedUsers,
       pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(total / parseInt(limit)),
+        current: pageNumber,
+        pages: Math.ceil(total / limitNumber),
         total
       }
     }

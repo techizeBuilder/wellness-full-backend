@@ -1,4 +1,4 @@
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import User from '../models/User';
 import Expert from '../models/Expert';
 import { Request, Response, NextFunction } from 'express';
@@ -80,22 +80,42 @@ export const requireEmailVerification = (req: Request, res: Response, next: Next
   next();
 };
 
+type TokenUserType = 'user' | 'expert' | 'admin';
+
+const resolveExpiresIn = (value: string | undefined, fallback: string): SignOptions['expiresIn'] => {
+  if (!value) {
+    return fallback as SignOptions['expiresIn'];
+  }
+
+  const numeric = Number(value);
+  if (!Number.isNaN(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  return value as SignOptions['expiresIn'];
+};
+
+const ensureSecret = (value: string | undefined, name: string): string => {
+  if (!value) {
+    throw new Error(`${name} is not defined`);
+  }
+  return value;
+};
+
 // Generate JWT token
-export const generateToken = (id: string, userType: string): string => {
-  return jwt.sign(
-    { id, userType },
-    process.env.JWT_SECRET as string,
-    { expiresIn: process.env.JWT_EXPIRE }
-  );
+export const generateToken = (id: string, userType: TokenUserType | string): string => {
+  const secret = ensureSecret(process.env.JWT_SECRET, 'JWT_SECRET');
+  const expiresIn = resolveExpiresIn(process.env.JWT_EXPIRE, '1h');
+
+  return jwt.sign({ id, userType }, secret, { expiresIn });
 };
 
 // Generate refresh token
-export const generateRefreshToken = (id: string, userType: string): string => {
-  return jwt.sign(
-    { id, userType },
-    process.env.JWT_REFRESH_SECRET as string,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRE }
-  );
+export const generateRefreshToken = (id: string, userType: TokenUserType | string): string => {
+  const secret = ensureSecret(process.env.JWT_REFRESH_SECRET, 'JWT_REFRESH_SECRET');
+  const expiresIn = resolveExpiresIn(process.env.JWT_REFRESH_EXPIRE, '7d');
+
+  return jwt.sign({ id, userType }, secret, { expiresIn });
 };
 
 // Verify refresh token

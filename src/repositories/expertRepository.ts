@@ -34,8 +34,8 @@ class ExpertRepository implements IExpertRepository {
       .digest('hex');
     
     return await Expert.findOne({
-      passwordResetToken: hashedToken,
-      passwordResetExpire: { $gt: Date.now() }
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() }
     });
   }
 

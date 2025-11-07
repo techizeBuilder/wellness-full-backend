@@ -138,8 +138,8 @@ const unifiedLogin = asyncHandler(async (req, res) => {
   }
 
   // Generate tokens
-  const token = generateToken(user._id, userType);
-  const refreshToken = generateRefreshToken(user._id, userType);
+  const token = generateToken(user._id.toString(), userType);
+  const refreshToken = generateRefreshToken(user._id.toString(), userType);
 
   // Remove password from response and add profile image URL if exists
   user.password = undefined;

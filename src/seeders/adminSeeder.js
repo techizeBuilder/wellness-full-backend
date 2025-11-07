@@ -1,5 +1,5 @@
-const Admin = require('../models/Admin');
-const logger = require('../utils/logger');
+const Admin = require('../models/Admin').default || require('../models/Admin');
+const logger = require('../utils/logger').default || require('../utils/logger');
 const ENV = require('../config/environment');
 
 const seedInitialAdmin = async () => {

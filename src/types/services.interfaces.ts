@@ -1,5 +1,5 @@
 import { IUser, IExpert } from './models';
-import {
+import type {
   AuthResult,
   RegisterUserData,
   RegisterExpertData,
@@ -38,4 +38,16 @@ export interface IExpertService {
   getExpertById(expertId: string): Promise<IExpert>;
   deleteExpert(expertId: string): Promise<IExpert>;
 }
+
+export type {
+  AuthResult,
+  RegisterUserData,
+  RegisterExpertData,
+  LoginCredentials,
+  UpdateProfileData,
+  UpdateExpertProfileData,
+  PaginationOptions,
+  PaginationResult,
+  FilterOptions
+} from './services';
 

@@ -1,8 +1,52 @@
-import mongoose from 'mongoose';
+import mongoose, { Document, Model } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
-const userSchema = new mongoose.Schema({
+export interface IUser extends Document {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  password?: string;
+  userType: 'user' | 'expert';
+  isEmailVerified: boolean;
+  isPhoneVerified: boolean;
+  profileImage?: string | null;
+  dateOfBirth?: Date;
+  gender?: 'male' | 'female' | 'other';
+  isActive: boolean;
+  lastLogin?: Date;
+  passwordResetToken?: string;
+  passwordResetExpire?: Date;
+  passwordResetRequested: boolean;
+  passwordResetRequestTime?: Date;
+  passwordResetVerified: boolean;
+  otpCode?: string;
+  otpExpire?: Date;
+  otpAttempts: number;
+  otpLockedUntil?: Date;
+  loginAttempts: number;
+  lockUntil?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+
+  // Virtuals
+  isLocked: boolean;
+  isOTPLocked: boolean;
+  name: string;
+
+  // Methods
+  matchPassword(enteredPassword: string): Promise<boolean>;
+  incLoginAttempts(): Promise<unknown>;
+  resetLoginAttempts(): Promise<unknown>;
+  generateOTP(): string;
+  verifyOTP(enteredOTP: string): { success: boolean; message: string };
+  getResetPasswordToken(): string;
+}
+
+type UserModel = Model<IUser>;
+
+const userSchema = new mongoose.Schema<IUser, UserModel>({
   firstName: {
     type: String,
     required: [true, 'First name is required'],
@@ -106,13 +150,13 @@ userSchema.index({ email: 1 });
 userSchema.index({ phone: 1 });
 
 // Virtual for account lock status
-userSchema.virtual('isLocked').get(function() {
-  return !!(this.lockUntil && this.lockUntil > Date.now());
+userSchema.virtual('isLocked').get(function(this: IUser) {
+  return !!(this.lockUntil && this.lockUntil.getTime() > Date.now());
 });
 
 // Virtual for OTP lock status
-userSchema.virtual('isOTPLocked').get(function() {
-  return !!(this.otpLockedUntil && this.otpLockedUntil > Date.now());
+userSchema.virtual('isOTPLocked').get(function(this: IUser) {
+  return !!(this.otpLockedUntil && this.otpLockedUntil.getTime() > Date.now());
 });
 
 // Virtual for full name
@@ -125,7 +169,7 @@ userSchema.set('toJSON', { virtuals: true });
 userSchema.set('toObject', { virtuals: true });
 
 // Pre-save middleware to hash password
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', async function(this: IUser, next) {
   // Only hash the password if it has been modified (or is new)
   if (!this.isModified('password')) return next();
   
@@ -140,48 +184,49 @@ userSchema.pre('save', async function(next) {
 });
 
 // Instance method to check password
-userSchema.methods.matchPassword = async function(enteredPassword) {
+userSchema.methods.matchPassword = async function(this: IUser, enteredPassword: string) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 // Instance method to increment login attempts
-userSchema.methods.incLoginAttempts = function() {
+userSchema.methods.incLoginAttempts = function(this: IUser) {
   // If we have a previous lock that has expired, restart at 1
-  if (this.lockUntil && this.lockUntil < Date.now()) {
+  if (this.lockUntil && this.lockUntil.getTime() < Date.now()) {
     return this.updateOne({
       $unset: { lockUntil: 1 },
       $set: { loginAttempts: 1 }
     });
   }
   
-  const updates = { $inc: { loginAttempts: 1 } };
+  const updates: Record<string, unknown> = { $inc: { loginAttempts: 1 } };
   
   // If we're at max attempts and not locked, lock the account
   if (this.loginAttempts + 1 >= 5 && !this.isLocked) {
-    updates.$set = { lockUntil: Date.now() + 2 * 60 * 60 * 1000 }; // 2 hours
+    updates.$set = { lockUntil: new Date(Date.now() + 2 * 60 * 60 * 1000) }; // 2 hours
   }
   
   return this.updateOne(updates);
 };
 
 // Instance method to reset login attempts
-userSchema.methods.resetLoginAttempts = function() {
+userSchema.methods.resetLoginAttempts = function(this: IUser) {
   return this.updateOne({
     $unset: { loginAttempts: 1, lockUntil: 1 }
   });
 };
 
 // Instance method to generate OTP
-userSchema.methods.generateOTP = function() {
+userSchema.methods.generateOTP = function(this: IUser) {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   this.otpCode = otp;
-  this.otpExpire = Date.now() + parseInt(process.env.OTP_EXPIRE_MINUTES) * 60 * 1000;
+  const expireMinutes = parseInt(process.env.OTP_EXPIRE_MINUTES || '10', 10);
+  this.otpExpire = new Date(Date.now() + expireMinutes * 60 * 1000);
   this.otpAttempts = 0;
   return otp;
 };
 
 // Instance method to verify OTP
-userSchema.methods.verifyOTP = function(enteredOTP) {
+userSchema.methods.verifyOTP = function(this: IUser, enteredOTP: string) {
   if (this.isOTPLocked) {
     return { success: false, message: 'OTP verification locked due to too many attempts' };
   }
@@ -190,7 +235,7 @@ userSchema.methods.verifyOTP = function(enteredOTP) {
     return { success: false, message: 'No OTP found. Please request a new one.' };
   }
   
-  if (this.otpExpire < Date.now()) {
+  if (this.otpExpire.getTime() < Date.now()) {
     return { success: false, message: 'OTP has expired. Please request a new one.' };
   }
   
@@ -198,7 +243,7 @@ userSchema.methods.verifyOTP = function(enteredOTP) {
     this.otpAttempts += 1;
     
     if (this.otpAttempts >= 3) {
-      this.otpLockedUntil = Date.now() + 30 * 60 * 1000; // Lock for 30 minutes
+      this.otpLockedUntil = new Date(Date.now() + 30 * 60 * 1000); // Lock for 30 minutes
     }
     
     return { success: false, message: 'Invalid OTP' };
@@ -214,7 +259,7 @@ userSchema.methods.verifyOTP = function(enteredOTP) {
 };
 
 // Instance method to generate reset password token
-userSchema.methods.getResetPasswordToken = function() {
+userSchema.methods.getResetPasswordToken = function(this: IUser) {
   // Generate token
   const resetToken = crypto.randomBytes(20).toString('hex');
   
@@ -225,9 +270,9 @@ userSchema.methods.getResetPasswordToken = function() {
     .digest('hex');
   
   // Set expire time (10 minutes)
-  this.passwordResetExpire = Date.now() + 10 * 60 * 1000;
+  this.passwordResetExpire = new Date(Date.now() + 10 * 60 * 1000);
   
   return resetToken;
 };
 
-export default mongoose.model('User', userSchema);
+export default mongoose.model<IUser>('User', userSchema);

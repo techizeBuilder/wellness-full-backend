@@ -1,7 +1,26 @@
-import mongoose from 'mongoose';
+import mongoose, { Document, Model } from 'mongoose';
 import bcrypt from 'bcryptjs';
 
-const adminSchema = new mongoose.Schema({
+export interface IAdmin extends Document {
+  name: string;
+  email: string;
+  password: string;
+  role: 'superadmin' | 'admin';
+  permissions: string[];
+  isActive: boolean;
+  isPrimary: boolean;
+  lastLogin?: Date;
+  resetPasswordToken?: string;
+  resetPasswordExpiry?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+
+  matchPassword(enteredPassword: string): Promise<boolean>;
+}
+
+type AdminModel = Model<IAdmin>;
+
+const adminSchema = new mongoose.Schema<IAdmin, AdminModel>({
   name: {
     type: String,
     required: [true, 'Name is required'],
@@ -47,7 +66,7 @@ const adminSchema = new mongoose.Schema({
 adminSchema.index({ email: 1 });
 
 // Hash password before save
-adminSchema.pre('save', async function(next) {
+adminSchema.pre('save', async function(this: IAdmin, next) {
   if (!this.isModified('password')) return next();
 
   try {
@@ -60,8 +79,8 @@ adminSchema.pre('save', async function(next) {
 });
 
 // Compare password
-adminSchema.methods.matchPassword = async function(enteredPassword) {
+adminSchema.methods.matchPassword = async function(this: IAdmin, enteredPassword: string) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
-export default mongoose.model('Admin', adminSchema);
+export default mongoose.model<IAdmin>('Admin', adminSchema);

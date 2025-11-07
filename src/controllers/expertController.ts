@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import Expert from '../models/Expert';
+import Expert, { IExpert } from '../models/Expert';
+import type { SortOrder } from 'mongoose';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import { sendOTPEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/emailService';
@@ -177,8 +178,8 @@ const registerExpert = asyncHandler(async (req, res) => {
     console.log('Skipping OTP - allowing immediate login');
 
     // Generate tokens for immediate login
-    const token = generateToken(expert._id, expert.userType);
-    const refreshToken = generateRefreshToken(expert._id, expert.userType);
+    const token = generateToken(expert._id.toString(), expert.userType);
+    const refreshToken = generateRefreshToken(expert._id.toString(), expert.userType);
 
     console.log('Tokens generated successfully');
 
@@ -206,15 +207,16 @@ const registerExpert = asyncHandler(async (req, res) => {
     console.error('Error creating expert:', error);
     
     // Handle validation errors
-    if (error.name === 'ValidationError') {
+    if ((error as any)?.name === 'ValidationError') {
       console.log('=== VALIDATION ERROR DETAILS ===');
       console.log('Full error:', error);
-      console.log('Error fields:', Object.keys(error.errors));
-      Object.keys(error.errors).forEach(field => {
-        console.log(`${field}: ${error.errors[field].message}`);
+      const validationErrors = (error as { errors: Record<string, { message: string }> }).errors;
+      console.log('Error fields:', Object.keys(validationErrors));
+      Object.keys(validationErrors).forEach(field => {
+        console.log(`${field}: ${validationErrors[field].message}`);
       });
       
-      const messages = Object.values(error.errors).map(val => val.message);
+      const messages = Object.values(validationErrors).map(val => val.message);
       return res.status(400).json({
         success: false,
         message: 'Validation error',
@@ -223,8 +225,8 @@ const registerExpert = asyncHandler(async (req, res) => {
     }
     
     // Handle duplicate key error
-    if (error.code === 11000) {
-      const field = Object.keys(error.keyValue)[0];
+    if ((error as any)?.code === 11000) {
+      const field = Object.keys((error as any).keyValue)[0];
       return res.status(400).json({
         success: false,
         message: `Expert with this ${field} already exists`
@@ -303,8 +305,8 @@ const loginExpert = asyncHandler(async (req, res) => {
   await expert.save();
 
   // Generate tokens
-  const token = generateToken(expert._id, expert.userType);
-  const refreshToken = generateRefreshToken(expert._id, expert.userType);
+  const token = generateToken(expert._id.toString(), expert.userType);
+  const refreshToken = generateRefreshToken(expert._id.toString(), expert.userType);
 
   // Remove password from response and add profile image URL
   expert.password = undefined;
@@ -352,7 +354,7 @@ const updateExpertProfile = asyncHandler(async (req, res) => {
     'availability'
   ];
   
-  const updateData = {};
+  const updateData: Record<string, unknown> = {};
 
   // Only include allowed fields
   allowedFields.forEach(field => {
@@ -384,9 +386,10 @@ const updateExpertProfile = asyncHandler(async (req, res) => {
   }
 
   // Check if phone number is already taken by another expert
-  if (updateData.phone) {
+  const phoneValue = typeof updateData.phone === 'string' ? updateData.phone : undefined;
+  if (phoneValue) {
     const existingExpert = await Expert.findOne({
-      phone: updateData.phone,
+      phone: phoneValue,
       _id: { $ne: req.user._id }
     });
 
@@ -406,6 +409,13 @@ const updateExpertProfile = asyncHandler(async (req, res) => {
       runValidators: true
     }
   );
+
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert not found'
+    });
+  }
 
   // Add profile image URL
   if (expert.profileImage) {
@@ -502,7 +512,7 @@ const verifyOTP = asyncHandler(async (req, res) => {
   await expert.save();
 
   // Send welcome email
-  await sendWelcomeEmail(expert.email, expert.firstName, expert.userType);
+  await sendWelcomeEmail(expert.email, expert.firstName, expert.userType as 'user' | 'expert');
 
   res.status(200).json({
     success: true,
@@ -548,8 +558,8 @@ const forgotPassword = asyncHandler(async (req, res) => {
     // Clear OTP and reset token fields if email fails
     expert.otpCode = undefined;
     expert.otpExpire = undefined;
-    expert.passwordResetToken = undefined;
-    expert.passwordResetExpire = undefined;
+    expert.resetPasswordToken = undefined;
+    expert.resetPasswordExpire = undefined;
     await expert.save();
 
     return res.status(500).json({
@@ -580,8 +590,8 @@ const resetPasswordWithOTP = asyncHandler(async (req, res) => {
 
   // Find expert with valid reset token and OTP
   const expert = await Expert.findOne({
-    passwordResetToken: token,
-    passwordResetExpire: { $gt: Date.now() },
+    resetPasswordToken: token,
+    resetPasswordExpire: { $gt: Date.now() },
     otpCode: { $exists: true },
     otpExpire: { $gt: Date.now() }
   });
@@ -601,8 +611,8 @@ const resetPasswordWithOTP = asyncHandler(async (req, res) => {
   expert.otpExpire = undefined;
   expert.otpAttempts = 0;
   expert.otpLockedUntil = undefined;
-  expert.passwordResetToken = undefined;
-  expert.passwordResetExpire = undefined;
+  expert.resetPasswordToken = undefined;
+  expert.resetPasswordExpire = undefined;
   
   // Mark email as verified if not already
   expert.isEmailVerified = true;
@@ -655,8 +665,8 @@ const resetPassword = asyncHandler(async (req, res) => {
   console.log('Expert updated at:', expert.updatedAt);
 
   // Generate new tokens
-  const jwtToken = generateToken(expert._id, expert.userType);
-  const refreshToken = generateRefreshToken(expert._id, expert.userType);
+  const jwtToken = generateToken(expert._id.toString(), expert.userType);
+  const refreshToken = generateRefreshToken(expert._id.toString(), expert.userType);
 
   res.status(200).json({
     success: true,
@@ -701,41 +711,46 @@ const changePassword = asyncHandler(async (req, res) => {
 // @route   GET /api/experts
 // @access  Public
 const getExperts = asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+  const page = Number(req.query.page) || 1;
+  const limit = Number(req.query.limit) || 10;
   const skip = (page - 1) * limit;
 
   // Build filter object
-  const filter = {
+  const filter: Record<string, unknown> = {
     isActive: true,
     verificationStatus: 'approved',
     isEmailVerified: true
   };
 
   // Add specialization filter if provided
-  if (req.query.specialization) {
-    filter.specialization = { $regex: req.query.specialization, $options: 'i' };
+  const specialization = req.query.specialization as string | undefined;
+  if (specialization) {
+    filter.specialization = { $regex: specialization, $options: 'i' };
   }
 
   // Add rating filter if provided
-  if (req.query.minRating) {
-    filter['rating.average'] = { $gte: parseFloat(req.query.minRating) };
+  const minRating = req.query.minRating ? Number(req.query.minRating) : undefined;
+  if (typeof minRating === 'number' && !Number.isNaN(minRating)) {
+    filter['rating.average'] = { $gte: minRating };
   }
 
   // Add hourly rate filter if provided
-  if (req.query.maxRate) {
-    filter.hourlyRate = { $lte: parseFloat(req.query.maxRate) };
+  const maxRate = req.query.maxRate ? Number(req.query.maxRate) : undefined;
+  if (typeof maxRate === 'number' && !Number.isNaN(maxRate)) {
+    filter.hourlyRate = { $lte: maxRate };
   }
 
   // Add language filter if provided
-  if (req.query.language) {
-    filter.languages = { $in: [req.query.language] };
+  const language = req.query.language as string | undefined;
+  if (language) {
+    filter.languages = { $in: [language] };
   }
 
   // Sort options
-  let sort = {};
-  if (req.query.sortBy) {
-    switch (req.query.sortBy) {
+  let sort: Record<string, SortOrder> = {};
+  const sortBy = req.query.sortBy as string | undefined;
+  if (sortBy) {
+    switch (sortBy) {
       case 'rating':
         sort = { 'rating.average': -1 };
         break;

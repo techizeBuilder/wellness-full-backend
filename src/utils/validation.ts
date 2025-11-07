@@ -86,6 +86,23 @@ export const forgotPasswordSchema = Joi.object({
   userType: Joi.string().valid('user', 'expert').optional()
 });
 
+const passwordMessage = 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character';
+
+export const resetPasswordSchema = Joi.object({
+  token: Joi.string().required().messages({ 'string.empty': 'Reset token is required' }),
+  password: Joi.string()
+    .min(8)
+    .max(128)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .required()
+    .messages({
+      'string.min': 'Password must be at least 8 characters long',
+      'string.max': 'Password cannot exceed 128 characters',
+      'string.pattern.base': passwordMessage,
+      'string.empty': 'Password is required'
+    })
+});
+
 export const resetPasswordWithTokenSchema = Joi.object({
   resetToken: Joi.string().required().messages({ 'string.empty': 'Reset token is required' }),
   password: Joi.string().min(8).max(128).pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/).required().messages({
@@ -98,6 +115,20 @@ export const resetPasswordWithTokenSchema = Joi.object({
     'any.only': 'Passwords do not match',
     'string.empty': 'Confirm password is required'
   })
+});
+
+export const resetPasswordWithOTPSchema = Joi.object({
+  password: Joi.string()
+    .min(8)
+    .max(128)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .required()
+    .messages({
+      'string.min': 'Password must be at least 8 characters long',
+      'string.max': 'Password cannot exceed 128 characters',
+      'string.pattern.base': passwordMessage,
+      'string.empty': 'Password is required'
+    })
 });
 
 export const otpVerificationSchema = Joi.object({
@@ -176,7 +207,9 @@ export default {
   expertRegisterSchema,
   loginSchema,
   forgotPasswordSchema,
+  resetPasswordSchema,
   resetPasswordWithTokenSchema,
+  resetPasswordWithOTPSchema,
   otpVerificationSchema,
   changePasswordSchema,
   updateProfileSchema,

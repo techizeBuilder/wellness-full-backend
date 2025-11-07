@@ -5,7 +5,7 @@ import { asyncHandler } from '../../middlewares/errorHandler';
 const getSubscriptions = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, search, status, type } = req.query;
   
-  let query = {};
+  const query: Record<string, unknown> = {};
   
   // Add search functionality
   if (search) {
@@ -25,11 +25,13 @@ const getSubscriptions = asyncHandler(async (req, res) => {
     query.type = type;
   }
   
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(limit) || 10;
+  const skip = (pageNumber - 1) * limitNumber;
   
   const subscriptions = await Subscription.find(query)
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit))
+    .limit(limitNumber)
     .skip(skip);
     
   const total = await Subscription.countDocuments(query);
@@ -38,8 +40,8 @@ const getSubscriptions = asyncHandler(async (req, res) => {
     success: true,
     data: subscriptions,
     pagination: {
-      current: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      current: pageNumber,
+      pages: Math.ceil(total / limitNumber),
       total
     }
   });

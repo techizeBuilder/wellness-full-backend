@@ -1,6 +1,6 @@
 const { seedInitialAdmin, seedDevDemoAdmin } = require('./adminSeeder');
 const { seedDefaultPermissions } = require('./permissionSeeder');
-const logger = require('../utils/logger');
+const logger = require('../utils/logger').default || require('../utils/logger');
 
 const runSeeders = async () => {
   try {

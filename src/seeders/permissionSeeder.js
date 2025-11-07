@@ -1,5 +1,5 @@
-const Permission = require('../models/Permission');
-const logger = require('../utils/logger');
+const Permission = require('../models/Permission').default || require('../models/Permission');
+const logger = require('../utils/logger').default || require('../utils/logger');
 
 const seedDefaultPermissions = async () => {
   try {

@@ -33,7 +33,7 @@ const getExpertStats = asyncHandler(async (req, res) => {
 const getExperts = asyncHandler(async (req, res) => {
   const { page = 1, limit = 10, search, status, specialty } = req.query;
   
-  let query = {};
+  const query: Record<string, unknown> = {};
   
   // Add search functionality
   if (search) {
@@ -55,12 +55,14 @@ const getExperts = asyncHandler(async (req, res) => {
     query.specialization = { $regex: specialty, $options: 'i' };
   }
   
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(limit) || 10;
+  const skip = (pageNumber - 1) * limitNumber;
   
   const experts = await Expert.find(query)
     .select('-password')
     .sort({ createdAt: -1 })
-    .limit(parseInt(limit))
+    .limit(limitNumber)
     .skip(skip);
     
   // Transform experts to include status field
@@ -77,8 +79,8 @@ const getExperts = asyncHandler(async (req, res) => {
     data: {
       experts: transformedExperts,
       pagination: {
-        current: parseInt(page),
-        pages: Math.ceil(total / parseInt(limit)),
+        current: pageNumber,
+        pages: Math.ceil(total / limitNumber),
         total
       }
     }
