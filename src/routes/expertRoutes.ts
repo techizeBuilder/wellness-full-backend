@@ -53,9 +53,6 @@ const otpLimiter = rateLimit({
 // Get all experts (for browsing)
 router.get('/', getExperts);
 
-// Get expert by ID
-router.get('/:id', getExpertById);
-
 // Expert registration with image upload
 router.post('/register', authLimiter, uploadProfileImage, handleUploadError, validate(expertRegisterSchema), registerExpert);
 
@@ -72,10 +69,15 @@ router.post('/send-otp', otpLimiter, validate(forgotPasswordSchema), sendOTP);
 router.post('/verify-otp', authLimiter, validate(otpVerificationSchema), verifyOTP);
 
 // Protected routes
+router.get('/me', protect, authorize('expert'), getCurrentExpert);
+
+// Public routes that must come after specific routes
+// Get expert by ID
+router.get('/:id', getExpertById);
+
+// Protected routes
 router.use(protect); // All routes below this middleware are protected
 router.use(authorize('expert')); // Only experts can access these routes
-
-router.get('/me', getCurrentExpert);
 
 router.put('/profile', uploadProfileImage, handleUploadError, validate(updateExpertProfileSchema), updateExpertProfile);
 
