@@ -3,6 +3,8 @@ import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import User from '../models/User';
 import Expert from '../models/Expert';
 import { getFileUrl } from '../middlewares/upload';
+import emailService from '../services/emailService';
+import logger from '../utils/logger';
 
 // @desc    Unified login for both users and experts
 // @route   POST /api/auth/unified-login
@@ -127,6 +129,44 @@ const unifiedLogin = asyncHandler(async (req, res) => {
     });
   }
 
+  // After successful password verification, always send OTP for login verification (only for users, not experts)
+  if (userType === 'user') {
+    console.log('Password verified for user, sending login OTP:', email);
+    
+    // Generate and send OTP for login verification
+    try {
+      const otp = user.generateOTP();
+      await user.save();
+      
+      // Send OTP email
+      const emailResult = await emailService.sendOTPEmail(email, otp, user.firstName, 'verification');
+      if (!emailResult.success) {
+        logger.error(`Failed to send OTP email to ${email}:`, emailResult.error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send login OTP. Please try again later.'
+        });
+      }
+      
+      logger.info(`OTP sent for login verification to ${email}`);
+      return res.status(200).json({
+        success: false,
+        requiresVerification: true,
+        message: 'Please verify your login with the OTP sent to your email.',
+        data: {
+          email: email
+        }
+      });
+    } catch (error: any) {
+      logger.error(`Error sending OTP for login:`, error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send login OTP. Please try again later.'
+      });
+    }
+  }
+
+  // For experts, proceed with normal login (no OTP required)
   console.log('Login successful for:', accountType);
 
   // Update last login

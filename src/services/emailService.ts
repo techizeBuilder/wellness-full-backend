@@ -55,7 +55,7 @@ export const sendEmail = async (options: SendEmailOptions, retryCount: number = 
   const startTime = Date.now();
   
   try {
-    logger.debug(`Sending email to: ${options.email} (Attempt ${retryCount + 1})`);
+    logger.info(`Sending email to: ${options.email}, Subject: ${options.subject} (Attempt ${retryCount + 1})`);
 
     const mailOptions = {
       from: `"Wellness App" <${ENV.EMAIL_FROM}>`,

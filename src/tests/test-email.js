@@ -1,5 +1,9 @@
 require('dotenv').config();
-const { sendEmail } = require('./utils/emailService');
+const path = require('path');
+// Add the src directory to the path
+const emailServicePath = path.join(__dirname, '../services/emailService');
+const emailService = require(emailServicePath);
+const { sendEmail } = emailService.default || emailService;
 
 async function testEmail() {
   console.log('Testing email service...');

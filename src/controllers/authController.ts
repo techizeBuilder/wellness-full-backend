@@ -4,12 +4,35 @@ import authService from '../services/authService';
 import ApiResponse from '../utils/response';
 import { MESSAGES } from '../constants/messages';
 import userService from '../services/userService';
+import { AuthResult } from '../types/services.interfaces';
 
-// @desc    Register user
+// @desc    Register user (sends OTP)
 // @route   POST /api/auth/register
 // @access  Public
 export const registerUser = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.registerUser(req.body);
+  
+  // For development: include OTP in response (remove in production)
+  const responseData: any = {
+    email: result.email,
+    message: result.message
+  };
+  
+  // Only include OTP in development mode for debugging
+  if (process.env.NODE_ENV === 'development' && (result as any).otp) {
+    responseData.debugOtp = (result as any).otp;
+    console.log(`\n🔐 DEBUG OTP for ${result.email}: ${(result as any).otp}\n`);
+  }
+  
+  return ApiResponse.success(res, responseData, result.message);
+});
+
+// @desc    Verify registration OTP and complete account creation
+// @route   POST /api/auth/verify-registration-otp
+// @access  Public
+export const verifyRegistrationOTP = asyncHandler(async (req: Request, res: Response) => {
+  const { email, otp } = req.body;
+  const result = await authService.verifyRegistrationOTP(email, otp);
   return ApiResponse.created(res, {
     user: result.user,
     userType: 'user',
@@ -24,12 +47,23 @@ export const registerUser = asyncHandler(async (req: Request, res: Response) => 
 // @access  Public
 export const loginUser = asyncHandler(async (req: Request, res: Response) => {
   const result = await authService.loginUser(req.body.email, req.body.password);
+  
+  // Check if email verification is required
+  if ('requiresVerification' in result && result.requiresVerification) {
+    return ApiResponse.success(res, {
+      requiresVerification: true,
+      email: result.email
+    }, result.message);
+  }
+  
+  // Normal login success - TypeScript now knows result is AuthResult
+  const authResult = result as AuthResult;
   return ApiResponse.success(res, {
-    user: result.user,
-    userType: result.user.userType,
-    accountType: result.user.userType === 'expert' ? 'Expert' : 'User',
-    token: result.token,
-    refreshToken: result.refreshToken
+    user: authResult.user,
+    userType: authResult.user.userType,
+    accountType: authResult.user.userType === 'expert' ? 'Expert' : 'User',
+    token: authResult.token,
+    refreshToken: authResult.refreshToken
   }, MESSAGES.AUTH.LOGIN_SUCCESS);
 });
 
@@ -56,11 +90,24 @@ export const sendOTP = asyncHandler(async (req: Request, res: Response) => {
   return ApiResponse.success(res, null, MESSAGES.AUTH.OTP_SENT);
 });
 
-// @desc    Verify OTP
+// @desc    Verify OTP (for login or general verification)
 // @route   POST /api/auth/verify-otp
 // @access  Public
 export const verifyOTP = asyncHandler(async (req: Request, res: Response) => {
-  await authService.verifyOTP(req.body.email, req.body.otp, 'user');
+  const result = await authService.verifyOTP(req.body.email, req.body.otp, 'user');
+  
+  // If result contains tokens, it's a login verification - return auth data
+  if ('token' in result && 'user' in result) {
+    return ApiResponse.success(res, {
+      user: result.user,
+      userType: result.user.userType,
+      accountType: result.user.userType === 'expert' ? 'Expert' : 'User',
+      token: result.token,
+      refreshToken: result.refreshToken
+    }, MESSAGES.AUTH.LOGIN_SUCCESS);
+  }
+  
+  // Otherwise, it's just a verification message
   return ApiResponse.success(res, null, MESSAGES.AUTH.OTP_VERIFIED);
 });
 

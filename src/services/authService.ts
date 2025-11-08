@@ -7,12 +7,20 @@ import { MESSAGES } from '../constants/messages';
 import logger from '../utils/logger';
 import { IAuthService, RegisterUserData, AuthResult } from '../types/services.interfaces';
 import { IUser, IExpert } from '../types/models';
+import PendingRegistration from '../models/PendingRegistration';
+import ENV from '../config/environment';
 
 class AuthService implements IAuthService {
-  async registerUser(userData: RegisterUserData): Promise<AuthResult> {
+  async registerUser(userData: RegisterUserData): Promise<{ message: string; email: string }> {
     const { firstName, lastName, email, phone, password, dateOfBirth, gender } = userData;
     
-    // Check if email exists
+    // Validate email configuration
+    if (!ENV.EMAIL_HOST || !ENV.EMAIL_USER || !ENV.EMAIL_PASS || !ENV.EMAIL_FROM) {
+      logger.error('Email configuration is missing. Please check your environment variables.');
+      throw new Error('Email service is not configured. Please contact support.');
+    }
+    
+    // Check if email already exists as a verified user or expert
     const emailCheck = await checkEmailExists(email);
     if (emailCheck.exists) {
       throw new Error(emailCheck.message);
@@ -24,9 +32,50 @@ class AuthService implements IAuthService {
       throw new Error(phoneCheck.message);
     }
 
-    // Create user
+    // Check if there's a pending registration for this email
+    let pendingRegistration = await PendingRegistration.findOne({ email });
+    
+    if (pendingRegistration) {
+      // If pending registration exists, check if it's locked
+      if (pendingRegistration.isOTPLocked) {
+        throw new Error('OTP verification is temporarily locked. Please try again later.');
+      }
+      
+      // Update the pending registration with new data and generate new OTP
+      pendingRegistration.firstName = firstName;
+      pendingRegistration.lastName = lastName || firstName;
+      pendingRegistration.phone = phone;
+      pendingRegistration.password = password;
+      pendingRegistration.dateOfBirth = dateOfBirth;
+      pendingRegistration.gender = gender;
+      const otp = pendingRegistration.generateOTP();
+      await pendingRegistration.save();
+      
+      // Send OTP email
+      logger.info(`Attempting to send OTP email to ${email} with OTP: ${otp}`);
+      const emailResult = await emailService.sendOTPEmail(email, otp, firstName, 'verification');
+      logger.info(`OTP email result for ${email}:`, { success: emailResult.success, error: emailResult.error });
+      
+      if (!emailResult.success) {
+        logger.error(`Failed to send OTP email to ${email}:`, emailResult.error);
+        throw new Error('Failed to send OTP email. Please check your email configuration or try again later.');
+      }
+      
+      logger.info(`OTP email sent successfully to ${email}. OTP: ${otp}`);
+      const result: any = { 
+        message: 'OTP sent to your email. Please verify to complete registration.',
+        email 
+      };
+      // Include OTP in development mode for debugging
+      if (process.env.NODE_ENV === 'development') {
+        result.otp = otp;
+      }
+      return result;
+    }
+
+    // Create new pending registration
     const finalLastName = lastName || firstName;
-    const user = await userRepository.create({
+    pendingRegistration = new PendingRegistration({
       firstName,
       lastName: finalLastName,
       email,
@@ -34,18 +83,91 @@ class AuthService implements IAuthService {
       password,
       dateOfBirth,
       gender,
+      userType: 'user'
+    });
+
+    // Generate OTP
+    const otp = pendingRegistration.generateOTP();
+    await pendingRegistration.save();
+
+    // Send OTP email
+    logger.info(`Attempting to send OTP email to ${email} with OTP: ${otp}`);
+    const emailResult = await emailService.sendOTPEmail(email, otp, firstName, 'verification');
+    logger.info(`OTP email result for ${email}:`, { success: emailResult.success, error: emailResult.error });
+    
+    if (!emailResult.success) {
+      logger.error(`Failed to send OTP email to ${email}:`, emailResult.error);
+      // Clean up pending registration if email fails
+      await PendingRegistration.deleteOne({ email });
+      throw new Error('Failed to send OTP email. Please check your email configuration or try again later.');
+    }
+
+    logger.info(`OTP email sent successfully to ${email}. OTP: ${otp}`);
+    const result: any = { 
+      message: 'OTP sent to your email. Please verify to complete registration.',
+      email 
+    };
+    // Include OTP in development mode for debugging
+    if (process.env.NODE_ENV === 'development') {
+      result.otp = otp;
+    }
+    return result;
+  }
+
+  async verifyRegistrationOTP(email: string, otp: string): Promise<AuthResult> {
+    // Find pending registration
+    const pendingRegistration = await PendingRegistration.findOne({ email });
+    
+    if (!pendingRegistration) {
+      throw new Error('No pending registration found. Please start the registration process again.');
+    }
+
+    // Verify OTP
+    const result = pendingRegistration.verifyOTP(otp);
+    if (!result.success) {
+      await pendingRegistration.save();
+      throw new Error(result.message);
+    }
+
+    // Check if email still doesn't exist (double-check before creating account)
+    const emailCheck = await checkEmailExists(email);
+    if (emailCheck.exists) {
+      // Delete pending registration and throw error
+      await PendingRegistration.deleteOne({ email });
+      throw new Error(emailCheck.message);
+    }
+
+    // Check if phone still doesn't exist
+    const phoneCheck = await checkPhoneExists(pendingRegistration.phone);
+    if (phoneCheck.exists) {
+      await PendingRegistration.deleteOne({ email });
+      throw new Error(phoneCheck.message);
+    }
+
+    // Create the actual user account
+    const user = await userRepository.create({
+      firstName: pendingRegistration.firstName,
+      lastName: pendingRegistration.lastName,
+      email: pendingRegistration.email,
+      phone: pendingRegistration.phone,
+      password: pendingRegistration.password,
+      dateOfBirth: pendingRegistration.dateOfBirth,
+      gender: pendingRegistration.gender,
       userType: 'user',
-      isEmailVerified: true,
+      isEmailVerified: true, // Verified via OTP
       isPhoneVerified: true,
       isActive: true
     });
+
+    // Delete pending registration after successful account creation
+    await PendingRegistration.deleteOne({ email });
 
     // Generate tokens
     const token = generateToken(user._id.toString(), user.userType);
     const refreshToken = generateRefreshToken(user._id.toString(), user.userType);
 
     // Send welcome email (async, don't wait)
-    emailService.sendWelcomeEmail(email, firstName, 'user').catch((err: Error) => {
+    emailService.sendWelcomeEmail(email, user.firstName, 'user').catch((err: Error) => {
       logger.error('Failed to send welcome email', err);
     });
 
@@ -54,6 +176,7 @@ class AuthService implements IAuthService {
       throw new Error('Failed to retrieve user after creation');
     }
 
+    logger.info(`User account created successfully after OTP verification: ${email}`);
     return {
       user: userWithoutPassword,
       token,
@@ -61,7 +184,7 @@ class AuthService implements IAuthService {
     };
   }
 
-  async loginUser(email: string, password: string): Promise<AuthResult> {
+  async loginUser(email: string, password: string): Promise<AuthResult | { requiresVerification: true; email: string; message: string }> {
     const user = await userRepository.findByEmail(email, true);
     
     if (!user) {
@@ -84,24 +207,23 @@ class AuthService implements IAuthService {
       throw new Error(MESSAGES.AUTH.INVALID_CREDENTIALS);
     }
 
-    // Reset login attempts on successful login
-    await user.resetLoginAttempts();
-    user.lastLogin = new Date();
+    // After successful password verification, always send OTP for login verification
+    // Generate and send OTP for login verification
+    const otp = user.generateOTP();
     await user.save();
-
-    // Generate tokens
-    const token = generateToken(user._id.toString(), user.userType);
-    const refreshToken = generateRefreshToken(user._id.toString(), user.userType);
-
-    const userWithoutPassword = await userRepository.findById(user._id.toString());
-    if (!userWithoutPassword) {
-      throw new Error('Failed to retrieve user after login');
+    
+    // Send OTP email
+    const emailResult = await emailService.sendOTPEmail(email, otp, user.firstName, 'verification');
+    if (!emailResult.success) {
+      logger.error(`Failed to send OTP email to ${email}:`, emailResult.error);
+      throw new Error('Failed to send login OTP. Please try again later.');
     }
-
+    
+    logger.info(`OTP sent for login verification to ${email}`);
     return {
-      user: userWithoutPassword,
-      token,
-      refreshToken
+      requiresVerification: true,
+      email: email,
+      message: 'Please verify your login with the OTP sent to your email.'
     };
   }
 
@@ -171,7 +293,7 @@ class AuthService implements IAuthService {
     return { message: MESSAGES.AUTH.OTP_SENT };
   }
 
-  async verifyOTP(email: string, otp: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string }> {
+  async verifyOTP(email: string, otp: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string } | AuthResult> {
     let user: IUser | IExpert | null;
     if (userType === 'expert') {
       user = await expertRepository.findByEmail(email);
@@ -193,6 +315,29 @@ class AuthService implements IAuthService {
     // Mark email as verified
     user.isEmailVerified = true;
     await user.save();
+
+    // If this is a login verification (user exists and was trying to login), return auth tokens
+    // Check if user is active (meaning they have an account and were trying to login)
+    if (user.isActive && userType === 'user') {
+      // Generate tokens for login
+      const token = generateToken(user._id.toString(), user.userType);
+      const refreshToken = generateRefreshToken(user._id.toString(), user.userType);
+      
+      const userWithoutPassword = await userRepository.findById(user._id.toString());
+      if (!userWithoutPassword) {
+        throw new Error('Failed to retrieve user after verification');
+      }
+
+      // Update last login
+      userWithoutPassword.lastLogin = new Date();
+      await userWithoutPassword.save();
+
+      return {
+        user: userWithoutPassword,
+        token,
+        refreshToken
+      };
+    }
 
     return { message: MESSAGES.AUTH.OTP_VERIFIED };
   }

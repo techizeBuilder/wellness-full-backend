@@ -2,6 +2,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import {
   registerUser,
+  verifyRegistrationOTP,
   loginUser,
   logoutUser,
   getCurrentUser,
@@ -50,6 +51,8 @@ const otpLimiter = rateLimit({
 
 // Public routes
 router.post('/register', authLimiter, validate(userRegisterSchema), registerUser);
+
+router.post('/verify-registration-otp', authLimiter, validate(otpVerificationSchema), verifyRegistrationOTP);
 
 router.post('/login', authLimiter, validate(loginSchema), unifiedLogin);
 
