@@ -86,6 +86,61 @@ export const forgotPasswordSchema = Joi.object({
   userType: Joi.string().valid('user', 'expert').optional()
 });
 
+export const googleLoginSchema = Joi.object({
+  idToken: Joi.string().required().messages({
+    'string.empty': 'Google ID token is required'
+  })
+});
+
+export const completeOnboardingSchema = Joi.object({
+  googleUserId: Joi.string().required().messages({
+    'string.empty': 'User ID is required'
+  }),
+  accountType: Joi.string().valid('Expert', 'User').required().messages({
+    'any.only': 'Account type must be either "Expert" or "User"',
+    'string.empty': 'Account type is required'
+  })
+});
+
+export const updateGoogleUserProfileSchema = Joi.object({
+  userId: Joi.string().required().messages({
+    'string.empty': 'User ID is required'
+  }),
+  firstName: Joi.string().trim().min(2).max(50).optional(),
+  lastName: Joi.string().trim().min(2).max(50).optional(),
+  phone: Joi.string().pattern(/^\d{10}$/).required().messages({
+    'string.pattern.base': 'Phone number must be exactly 10 digits',
+    'string.empty': 'Phone number is required'
+  })
+});
+
+export const updateGoogleExpertProfileSchema = Joi.object({
+  userId: Joi.string().required().messages({
+    'string.empty': 'User ID is required'
+  }),
+  firstName: Joi.string().trim().min(2).max(50).optional(),
+  lastName: Joi.string().trim().min(2).max(50).optional(),
+  phone: Joi.string().pattern(/^\d{10}$/).required().messages({
+    'string.pattern.base': 'Phone number must be exactly 10 digits',
+    'string.empty': 'Phone number is required'
+  }),
+  specialization: Joi.string().trim().min(2).max(100).required().messages({
+    'string.empty': 'Specialization is required',
+    'string.min': 'Specialization must be at least 2 characters long'
+  }),
+  experience: Joi.number().integer().min(0).max(50).optional().messages({
+    'number.base': 'Experience must be a number',
+    'number.min': 'Experience cannot be negative',
+    'number.max': 'Experience cannot exceed 50 years'
+  }),
+  bio: Joi.string().trim().max(1000).optional().messages({
+    'string.max': 'Bio cannot exceed 1000 characters'
+  }),
+  hourlyRate: Joi.number().min(0).optional().messages({
+    'number.min': 'Hourly rate cannot be negative'
+  })
+});
+
 const passwordMessage = 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character';
 
 export const resetPasswordSchema = Joi.object({

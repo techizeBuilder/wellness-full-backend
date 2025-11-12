@@ -14,6 +14,7 @@ import {
   updateProfile
 } from '../controllers/authController';
 import { unifiedLogin } from '../controllers/unifiedAuthController';
+import { googleMobileLogin, completeGoogleOnboarding, updateGoogleUserProfile, updateGoogleExpertProfile } from '../controllers/googleAuthController';
 import { protect } from '../middlewares/auth';
 import { uploadProfileImage, handleUploadError } from '../middlewares/upload';
 import {
@@ -25,7 +26,11 @@ import {
   changePasswordSchema,
   updateProfileSchema,
   validate,
-  validateUserRegistration
+  validateUserRegistration,
+  googleLoginSchema,
+  completeOnboardingSchema,
+  updateGoogleUserProfileSchema,
+  updateGoogleExpertProfileSchema
 } from '../utils/validation';
 
 const router = express.Router();
@@ -58,6 +63,12 @@ router.post('/login', authLimiter, validate(loginSchema), unifiedLogin);
 
 // Keep original login as backup
 router.post('/user-login', authLimiter, validate(loginSchema), loginUser);
+
+// Google OAuth routes
+router.post('/google/mobile', authLimiter, validate(googleLoginSchema), googleMobileLogin);
+router.post('/google/complete-onboarding', authLimiter, validate(completeOnboardingSchema), completeGoogleOnboarding);
+router.post('/google/update-user-profile', authLimiter, validate(updateGoogleUserProfileSchema), updateGoogleUserProfile);
+router.post('/google/update-expert-profile', authLimiter, validate(updateGoogleExpertProfileSchema), updateGoogleExpertProfile);
 
 router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), forgotPassword);
 

@@ -27,7 +27,17 @@ export const protect = async (req: Request, res: Response, next: NextFunction) =
       // Find user based on type
       let user: any;
       if (decoded.userType === 'expert') {
+        // Try to find Expert first (regular expert registration)
         user = await Expert.findById(decoded.id).select('-password');
+        
+        // If not found, try User (Google OAuth experts use User model)
+        if (!user) {
+          user = await User.findById(decoded.id).select('-password');
+          // Verify it's actually an expert user
+          if (user && user.userType !== 'expert') {
+            user = null;
+          }
+        }
       } else {
         user = await User.findById(decoded.id).select('-password');
       }
@@ -142,7 +152,17 @@ export const optionalAuth = async (req: Request, res: Response, next: NextFuncti
         
         let user: any;
         if (decoded.userType === 'expert') {
+          // Try to find Expert first (regular expert registration)
           user = await Expert.findById(decoded.id).select('-password');
+          
+          // If not found, try User (Google OAuth experts use User model)
+          if (!user) {
+            user = await User.findById(decoded.id).select('-password');
+            // Verify it's actually an expert user
+            if (user && user.userType !== 'expert') {
+              user = null;
+            }
+          }
         } else {
           user = await User.findById(decoded.id).select('-password');
         }

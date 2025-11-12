@@ -329,7 +329,23 @@ const loginExpert = asyncHandler(async (req, res) => {
 // @route   GET /api/experts/me
 // @access  Private
 const getCurrentExpert = asyncHandler(async (req, res) => {
-  const expert = { ...req.user.toObject() };
+  let expert: any;
+  
+  // Check if req.user is a User model (Google OAuth experts)
+  // If so, find the Expert record by email
+  if (req.user.constructor.modelName === 'User' && req.user.userType === 'expert') {
+    expert = await Expert.findOne({ email: req.user.email }).select('-password');
+    
+    if (!expert) {
+      return res.status(404).json({
+        success: false,
+        message: 'Expert profile not found. Please complete your expert registration.'
+      });
+    }
+  } else {
+    // Regular expert (Expert model)
+    expert = { ...req.user.toObject() };
+  }
   
   // Add profile image URL
   if (expert.profileImage) {

@@ -8,6 +8,10 @@ export interface IUser extends Document {
   email: string;
   phone: string;
   password?: string;
+  authProvider?: 'password' | 'google' | 'apple';
+  googleId?: string;
+  googleAvatar?: string | null;
+  accountTypeConfirmed?: boolean;
   userType: 'user' | 'expert';
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
@@ -72,15 +76,43 @@ const userSchema = new mongoose.Schema<IUser, UserModel>({
   },
   phone: {
     type: String,
-    required: [true, 'Phone number is required'],
+    required: [
+      function(this: IUser) {
+        return !this.authProvider || this.authProvider === 'password';
+      },
+      'Phone number is required'
+    ],
     trim: true,
     match: [/^[+]?[\d\s\-\(\)]{10,}$/, 'Please enter a valid phone number']
   },
+  authProvider: {
+    type: String,
+    enum: ['password', 'google', 'apple'],
+    default: 'password'
+  },
   password: {
     type: String,
-    required: [true, 'Password is required'],
+    required: [
+      function(this: IUser) {
+        return !this.authProvider || this.authProvider === 'password';
+      },
+      'Password is required'
+    ],
     minlength: [6, 'Password must be at least 6 characters'],
     select: false
+  },
+  googleId: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  googleAvatar: {
+    type: String,
+    default: null
+  },
+  accountTypeConfirmed: {
+    type: Boolean,
+    default: false
   },
   userType: {
     type: String,
