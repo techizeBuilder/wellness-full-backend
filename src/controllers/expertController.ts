@@ -776,6 +776,9 @@ const getExperts = asyncHandler(async (req, res) => {
       case 'price':
         sort = { hourlyRate: 1 };
         break;
+      case 'createdAt':
+        sort = { createdAt: -1 };
+        break;
       default:
         sort = { createdAt: -1 };
     }
