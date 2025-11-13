@@ -224,7 +224,7 @@ export const updateExpertProfileSchema = Joi.object({
   specialization: Joi.string().trim().min(2).max(100).optional(),
   experience: Joi.number().integer().min(0).max(50).optional(),
   bio: Joi.string().trim().max(1000).optional(),
-  hourlyRate: Joi.number().min(0).optional(),
+  hourlyRate: Joi.number().min(0).max(100000).optional(),
   qualifications: Joi.array().items(Joi.object({
     degree: Joi.string().required(),
     institution: Joi.string().required(),
