@@ -1,4 +1,5 @@
 import Expert from '../../models/Expert';
+import BankAccount from '../../models/BankAccount';
 import { asyncHandler } from '../../middlewares/errorHandler';
 import { checkEmailExists, checkPhoneExists } from '../../utils/emailValidation';
 
@@ -98,9 +99,17 @@ const getExpertById = asyncHandler(async (req, res) => {
     });
   }
   
+  // Fetch bank account details for the expert
+  const bankAccount = await BankAccount.findOne({ expert: expert._id });
+  
+  const expertData = expert.toObject();
+  if (bankAccount) {
+    expertData.bankAccount = bankAccount;
+  }
+  
   res.status(200).json({
     success: true,
-    data: { expert }
+    data: { expert: expertData }
   });
 });
 
