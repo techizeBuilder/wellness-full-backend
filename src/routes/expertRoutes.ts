@@ -14,7 +14,9 @@ import {
   getExperts,
   getExpertById,
   getBankAccount,
-  createOrUpdateBankAccount
+  createOrUpdateBankAccount,
+  getAvailability,
+  createOrUpdateAvailability
 } from '../controllers/expertController';
 import { protect, authorize } from '../middlewares/auth';
 import { uploadProfileImage, handleUploadError } from '../middlewares/upload';
@@ -81,6 +83,10 @@ router.use(authorize('expert')); // Only experts can access these routes
 // Bank account routes - MUST come before /:id route to avoid route conflicts
 router.get('/bank-account', getBankAccount);
 router.post('/bank-account', validate(bankAccountSchema), createOrUpdateBankAccount);
+
+// Availability routes - MUST come before /:id route to avoid route conflicts
+router.get('/availability', getAvailability);
+router.post('/availability', createOrUpdateAvailability);
 
 router.put('/profile', uploadProfileImage, handleUploadError, validate(updateExpertProfileSchema), updateExpertProfile);
 

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import Expert, { IExpert } from '../models/Expert';
 import BankAccount from '../models/BankAccount';
+import ExpertAvailability from '../models/ExpertAvailability';
 import type { SortOrder } from 'mongoose';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
@@ -1004,6 +1005,178 @@ const createOrUpdateBankAccount = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Get expert availability
+// @route   GET /api/experts/availability
+// @access  Private (Expert only)
+const getAvailability = asyncHandler(async (req, res) => {
+  let expertId: string;
+  const currentUser = req.user;
+  
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+  
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+  
+  // Try to find Expert record - first by ID (for regular experts), then by email (for Google OAuth experts)
+  let expert = await Expert.findById(userId).select('_id');
+  
+  if (!expert && userEmail) {
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+  }
+  
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert profile not found. Please complete your expert profile first.'
+    });
+  }
+  
+  expertId = expert._id.toString();
+  
+  const availability = await ExpertAvailability.findOne({ expert: expertId });
+  
+  if (!availability) {
+    // Return default empty availability structure
+    const defaultAvailability = [
+      { day: "Sunday", dayName: "S", isOpen: false, timeRanges: [] },
+      { day: "Monday", dayName: "M", isOpen: false, timeRanges: [] },
+      { day: "Tuesday", dayName: "T", isOpen: false, timeRanges: [] },
+      { day: "Wednesday", dayName: "W", isOpen: false, timeRanges: [] },
+      { day: "Thursday", dayName: "T", isOpen: false, timeRanges: [] },
+      { day: "Friday", dayName: "F", isOpen: false, timeRanges: [] },
+      { day: "Saturday", dayName: "S", isOpen: false, timeRanges: [] },
+    ];
+    
+    return res.status(200).json({
+      success: true,
+      data: { availability: defaultAvailability },
+      message: 'No availability found. Using default structure.'
+    });
+  }
+  
+  res.status(200).json({
+    success: true,
+    data: { availability: availability.availability }
+  });
+});
+
+// @desc    Create or update expert availability
+// @route   POST /api/experts/availability
+// @access  Private (Expert only)
+const createOrUpdateAvailability = asyncHandler(async (req, res) => {
+  let expertId: string;
+  const currentUser = req.user;
+  
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+  
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+  
+  // Try to find Expert record - first by ID (for regular experts), then by email (for Google OAuth experts)
+  let expert = await Expert.findById(userId).select('_id');
+  
+  if (!expert && userEmail) {
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+  }
+  
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert profile not found. Please complete your expert profile first.'
+    });
+  }
+  
+  expertId = expert._id.toString();
+  
+  const { availability } = req.body;
+  
+  if (!availability || !Array.isArray(availability) || availability.length !== 7) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid availability data. Must contain exactly 7 days (Sunday through Saturday).'
+    });
+  }
+  
+  // Validate each day
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  for (let i = 0; i < availability.length; i++) {
+    const day = availability[i];
+    if (day.day !== days[i]) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid day order. Expected ${days[i]}, got ${day.day}.`
+      });
+    }
+    
+    if (day.isOpen && (!day.timeRanges || day.timeRanges.length === 0)) {
+      return res.status(400).json({
+        success: false,
+        message: `${day.day} is marked as open but has no time ranges.`
+      });
+    }
+    
+    // Validate time ranges
+    for (const range of day.timeRanges || []) {
+      if (!range.startTime || !range.endTime) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid time range for ${day.day}: both startTime and endTime are required.`
+        });
+      }
+      
+      const [startHour, startMin] = range.startTime.split(':').map(Number);
+      const [endHour, endMin] = range.endTime.split(':').map(Number);
+      
+      if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid time format for ${day.day}. Use HH:MM format.`
+        });
+      }
+      
+      const startTotal = startHour * 60 + startMin;
+      const endTotal = endHour * 60 + endMin;
+      
+      if (endTotal <= startTotal) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid time range for ${day.day}: end time must be after start time.`
+        });
+      }
+    }
+  }
+  
+  // Create or update availability
+  const availabilityData = await ExpertAvailability.findOneAndUpdate(
+    { expert: expertId },
+    { 
+      expert: expertId,
+      availability: availability
+    },
+    { 
+      new: true, 
+      upsert: true,
+      runValidators: true
+    }
+  );
+  
+  res.status(200).json({
+    success: true,
+    message: 'Availability updated successfully',
+    data: { availability: availabilityData.availability }
+  });
+});
+
 export {
   registerExpert,
   loginExpert,
@@ -1018,5 +1191,7 @@ export {
   getExperts,
   getExpertById,
   getBankAccount,
-  createOrUpdateBankAccount
+  createOrUpdateBankAccount,
+  getAvailability,
+  createOrUpdateAvailability
 };
