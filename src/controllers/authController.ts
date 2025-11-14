@@ -78,7 +78,17 @@ export const logoutUser = asyncHandler(async (req: Request, res: Response) => {
 // @route   GET /api/auth/me
 // @access  Private
 export const getCurrentUser = asyncHandler(async (req: Request, res: Response) => {
-  const user = await userService.getCurrentUser((req as any).user._id);
+  const currentUser = (req as any).user;
+  
+  // If user is an Expert (regular expert, not Google OAuth), return it directly
+  // The protect middleware already validated and loaded the user
+  if (currentUser.constructor.modelName === 'Expert') {
+    return ApiResponse.success(res, { user: currentUser.toObject() });
+  }
+  
+  // For User model (regular users or Google OAuth experts), use userService
+  // This ensures consistent response format and any additional processing
+  const user = await userService.getCurrentUser(currentUser._id);
   return ApiResponse.success(res, { user });
 });
 

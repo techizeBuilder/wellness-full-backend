@@ -224,6 +224,7 @@ export const updateExpertProfileSchema = Joi.object({
   specialization: Joi.string().trim().min(2).max(100).optional(),
   experience: Joi.number().integer().min(0).max(50).optional(),
   bio: Joi.string().trim().max(1000).optional(),
+  education: Joi.string().trim().max(1000).optional(),
   hourlyRate: Joi.number().min(0).max(100000).optional(),
   qualifications: Joi.array().items(Joi.object({
     degree: Joi.string().required(),
@@ -231,8 +232,36 @@ export const updateExpertProfileSchema = Joi.object({
     year: Joi.number().integer().min(1950).max(new Date().getFullYear()).required()
   })).optional(),
   languages: Joi.array().items(Joi.string().trim()).optional(),
-  consultationMethods: Joi.array().items(Joi.string().valid('video', 'audio', 'chat', 'in-person')).optional(),
+  consultationMethods: Joi.array().items(Joi.string().trim()).optional(),
   availability: Joi.object().optional()
+});
+
+export const bankAccountSchema = Joi.object({
+  accountHolderName: Joi.string().trim().min(2).max(100).required().messages({
+    'string.empty': 'Account holder name is required',
+    'string.min': 'Account holder name must be at least 2 characters long',
+    'string.max': 'Account holder name cannot exceed 100 characters'
+  }),
+  accountNumber: Joi.string().pattern(/^\d{9,18}$/).required().messages({
+    'string.empty': 'Account number is required',
+    'string.pattern.base': 'Account number must be between 9 and 18 digits'
+  }),
+  bankName: Joi.string().trim().min(2).max(100).required().messages({
+    'string.empty': 'Bank name is required',
+    'string.min': 'Bank name must be at least 2 characters long',
+    'string.max': 'Bank name cannot exceed 100 characters'
+  }),
+  ifscCode: Joi.string().pattern(/^[A-Z]{4}0[A-Z0-9]{6}$/).required().messages({
+    'string.empty': 'IFSC code is required',
+    'string.pattern.base': 'Please enter a valid IFSC code (e.g., ABCD0123456)'
+  }),
+  branchName: Joi.string().trim().max(100).optional().messages({
+    'string.max': 'Branch name cannot exceed 100 characters'
+  }),
+  accountType: Joi.string().valid('savings', 'current').required().messages({
+    'any.only': 'Account type must be either "savings" or "current"',
+    'string.empty': 'Account type is required'
+  })
 });
 
 export const validate = (schema: ObjectSchema) => {
@@ -269,6 +298,7 @@ export default {
   changePasswordSchema,
   updateProfileSchema,
   updateExpertProfileSchema,
+  bankAccountSchema,
   validate,
   validateUserRegistration
 };

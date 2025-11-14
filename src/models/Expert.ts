@@ -42,6 +42,7 @@ export interface IExpert extends Document {
   qualifications: IQualification[];
   certifications: ICertification[];
   bio?: string;
+  education?: string;
   profileImage?: string | null;
   documents: {
     filename?: string;
@@ -175,6 +176,10 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
     type: String,
     maxlength: [1000, 'Bio cannot exceed 1000 characters']
   },
+  education: {
+    type: String,
+    maxlength: [1000, 'Education cannot exceed 1000 characters']
+  },
   profileImage: {
     type: String,
     default: null
@@ -215,8 +220,7 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
   }],
   consultationMethods: [{
     type: String,
-    enum: ['video', 'audio', 'chat', 'in-person'],
-    default: ['video']
+    trim: true
   }],
   
   // Verification and approval

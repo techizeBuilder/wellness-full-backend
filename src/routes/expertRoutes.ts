@@ -12,7 +12,9 @@ import {
   resetPasswordWithOTP,
   changePassword,
   getExperts,
-  getExpertById
+  getExpertById,
+  getBankAccount,
+  createOrUpdateBankAccount
 } from '../controllers/expertController';
 import { protect, authorize } from '../middlewares/auth';
 import { uploadProfileImage, handleUploadError } from '../middlewares/upload';
@@ -25,6 +27,7 @@ import {
   otpVerificationSchema,
   changePasswordSchema,
   updateExpertProfileSchema,
+  bankAccountSchema,
   validate
 } from '../utils/validation';
 
@@ -71,16 +74,20 @@ router.post('/verify-otp', authLimiter, validate(otpVerificationSchema), verifyO
 // Protected routes
 router.get('/me', protect, authorize('expert'), getCurrentExpert);
 
-// Public routes that must come after specific routes
-// Get expert by ID
-router.get('/:id', getExpertById);
-
-// Protected routes
+// Protected routes - must be defined before parameterized routes
 router.use(protect); // All routes below this middleware are protected
 router.use(authorize('expert')); // Only experts can access these routes
+
+// Bank account routes - MUST come before /:id route to avoid route conflicts
+router.get('/bank-account', getBankAccount);
+router.post('/bank-account', validate(bankAccountSchema), createOrUpdateBankAccount);
 
 router.put('/profile', uploadProfileImage, handleUploadError, validate(updateExpertProfileSchema), updateExpertProfile);
 
 router.put('/change-password', validate(changePasswordSchema), changePassword);
+
+// Public routes that must come after specific routes
+// Get expert by ID - This must be last to avoid matching other routes
+router.get('/:id', getExpertById);
 
 export default router;

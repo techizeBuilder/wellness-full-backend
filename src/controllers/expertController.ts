@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import Expert, { IExpert } from '../models/Expert';
+import BankAccount from '../models/BankAccount';
 import type { SortOrder } from 'mongoose';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
@@ -366,7 +367,7 @@ const getCurrentExpert = asyncHandler(async (req, res) => {
 const updateExpertProfile = asyncHandler(async (req, res) => {
   const allowedFields = [
     'firstName', 'lastName', 'phone', 'specialization', 'experience',
-    'bio', 'hourlyRate', 'qualifications', 'languages', 'consultationMethods',
+    'bio', 'education', 'hourlyRate', 'qualifications', 'languages', 'consultationMethods',
     'availability'
   ];
   
@@ -850,6 +851,159 @@ const getExpertById = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get expert bank account
+// @route   GET /api/experts/bank-account
+// @access  Private (Expert only)
+const getBankAccount = asyncHandler(async (req, res) => {
+  let expertId: string;
+  const currentUser = req.user;
+  
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+  
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+  const userModelName = currentUser.constructor?.modelName || 'Unknown';
+  
+  console.log(`[getBankAccount] User ID: ${userId}, Email: ${userEmail}, Model: ${userModelName}`);
+  
+  // Try to find Expert record - first by ID (for regular experts), then by email (for Google OAuth experts)
+  let expert = null;
+  try {
+    expert = await Expert.findById(userId).select('_id');
+    console.log(`[getBankAccount] Expert lookup by ID: ${expert ? 'found' : 'not found'}`);
+  } catch (error) {
+    console.log(`[getBankAccount] Error looking up Expert by ID:`, error);
+  }
+  
+  if (!expert && userEmail) {
+    // If not found by ID, try by email (for Google OAuth experts stored in User model)
+    try {
+      expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+      console.log(`[getBankAccount] Expert lookup by email: ${expert ? 'found' : 'not found'}`);
+    } catch (error) {
+      console.log(`[getBankAccount] Error looking up Expert by email:`, error);
+    }
+  }
+  
+  if (!expert) {
+    // Expert record doesn't exist - return empty bank account instead of error
+    // This can happen if the expert profile isn't fully set up yet
+    console.log(`[getBankAccount] No Expert record found, returning empty bank account`);
+    return res.status(200).json({
+      success: true,
+      data: { bankAccount: null },
+      message: 'No bank account found. Please complete your expert profile first.'
+    });
+  }
+  
+  expertId = expert._id.toString();
+  console.log(`[getBankAccount] Using Expert ID: ${expertId}`);
+
+  const bankAccount = await BankAccount.findOne({ expert: expertId });
+
+  if (!bankAccount) {
+    return res.status(200).json({
+      success: true,
+      data: { bankAccount: null },
+      message: 'No bank account found'
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { bankAccount }
+  });
+});
+
+// @desc    Create or update expert bank account
+// @route   POST /api/experts/bank-account
+// @access  Private (Expert only)
+const createOrUpdateBankAccount = asyncHandler(async (req, res) => {
+  let expertId: string;
+  const currentUser = req.user;
+  
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+  
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+  
+  // Try to find Expert record - first by ID (for regular experts), then by email (for Google OAuth experts)
+  let expert = await Expert.findById(userId).select('_id');
+  
+  if (!expert && userEmail) {
+    // If not found by ID, try by email (for Google OAuth experts stored in User model)
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+  }
+  
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert profile not found. Please complete your expert profile first.'
+    });
+  }
+  
+  expertId = expert._id.toString();
+  
+  const {
+    accountHolderName,
+    accountNumber,
+    bankName,
+    ifscCode,
+    branchName,
+    accountType
+  } = req.body;
+
+  // Check if bank account already exists
+  let bankAccount = await BankAccount.findOne({ expert: expertId });
+
+  if (bankAccount) {
+    // Update existing bank account
+    bankAccount.accountHolderName = accountHolderName;
+    bankAccount.accountNumber = accountNumber;
+    bankAccount.bankName = bankName;
+    bankAccount.ifscCode = ifscCode.toUpperCase();
+    bankAccount.branchName = branchName;
+    bankAccount.accountType = accountType;
+    bankAccount.isActive = true;
+
+    await bankAccount.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Bank account updated successfully',
+      data: { bankAccount }
+    });
+  } else {
+    // Create new bank account
+    bankAccount = await BankAccount.create({
+      expert: expertId,
+      accountHolderName,
+      accountNumber,
+      bankName,
+      ifscCode: ifscCode.toUpperCase(),
+      branchName,
+      accountType,
+      isActive: true
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Bank account created successfully',
+      data: { bankAccount }
+    });
+  }
+});
+
 export {
   registerExpert,
   loginExpert,
@@ -862,5 +1016,7 @@ export {
   resetPasswordWithOTP,
   changePassword,
   getExperts,
-  getExpertById
+  getExpertById,
+  getBankAccount,
+  createOrUpdateBankAccount
 };
