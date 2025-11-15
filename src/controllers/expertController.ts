@@ -369,7 +369,7 @@ const updateExpertProfile = asyncHandler(async (req, res) => {
   const allowedFields = [
     'firstName', 'lastName', 'phone', 'specialization', 'experience',
     'bio', 'education', 'hourlyRate', 'qualifications', 'languages', 'consultationMethods',
-    'availability'
+    'sessionType', 'availability'
   ];
   
   const updateData: Record<string, unknown> = {};
@@ -377,7 +377,7 @@ const updateExpertProfile = asyncHandler(async (req, res) => {
   // Only include allowed fields
   allowedFields.forEach(field => {
     if (req.body[field] !== undefined) {
-      if (field === 'qualifications' || field === 'languages' || field === 'consultationMethods') {
+      if (field === 'qualifications' || field === 'languages' || field === 'consultationMethods' || field === 'sessionType') {
         try {
           updateData[field] = typeof req.body[field] === 'string' 
             ? JSON.parse(req.body[field]) 

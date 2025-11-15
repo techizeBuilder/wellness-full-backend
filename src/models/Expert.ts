@@ -54,6 +54,7 @@ export interface IExpert extends Document {
   availability?: Availability;
   languages: string[];
   consultationMethods: string[];
+  sessionType?: string[];
   isEmailVerified: boolean;
   isPhoneVerified: boolean;
   isProfileComplete: boolean;
@@ -220,6 +221,11 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
   }],
   consultationMethods: [{
     type: String,
+    trim: true
+  }],
+  sessionType: [{
+    type: String,
+    enum: ['one-on-one', 'one-to-many'],
     trim: true
   }],
   

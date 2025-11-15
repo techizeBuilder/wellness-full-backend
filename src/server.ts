@@ -21,10 +21,12 @@ import { errorHandler, notFound } from './middlewares/errorHandler';
 // Import routes
 import authRoutes from './routes/authRoutes';
 import expertRoutes from './routes/expertRoutes';
+import bookingRoutes from './routes/bookingRoutes';
 import adminRoutes from './routes/admin/adminRoutes';
 import userRoutes from './routes/admin/userRoutes';
 import adminExpertRoutes from './routes/admin/expertRoutes';
 import subscriptionRoutes from './routes/admin/subscriptionRoutes';
+import adminBookingRoutes from './routes/admin/bookingRoutes';
 
 // Import seeders
 import { runSeeders } from './seeders';
@@ -105,10 +107,12 @@ app.get('/health', (req: Request, res: Response) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/experts', expertRoutes);
+app.use('/api/bookings', bookingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/users', userRoutes);
 app.use('/api/admin/experts', adminExpertRoutes);
 app.use('/api/admin/subscriptions', subscriptionRoutes);
+app.use('/api/admin/bookings', adminBookingRoutes);
 
 // Default route
 app.get('/', (req: Request, res: Response) => {
