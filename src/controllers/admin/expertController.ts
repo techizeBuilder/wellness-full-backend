@@ -102,7 +102,7 @@ const getExpertById = asyncHandler(async (req, res) => {
   // Fetch bank account details for the expert
   const bankAccount = await BankAccount.findOne({ expert: expert._id });
   
-  const expertData = expert.toObject();
+  const expertData: any = expert.toObject();
   if (bankAccount) {
     expertData.bankAccount = bankAccount;
   }
