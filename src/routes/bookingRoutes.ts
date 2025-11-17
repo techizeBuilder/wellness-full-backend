@@ -4,7 +4,8 @@ import {
   createBooking,
   getUserBookings,
   getExpertBookings,
-  updateBookingStatus
+  updateBookingStatus,
+  rescheduleBooking
 } from '../controllers/bookingController';
 import { protect } from '../middlewares/auth';
 
@@ -22,6 +23,9 @@ router.get('/expert', protect, getExpertBookings);
 
 // Protected route - Update booking status
 router.patch('/:id/status', protect, updateBookingStatus);
+
+// Protected route - Reschedule booking
+router.patch('/:id/reschedule', protect, rescheduleBooking);
 
 export default router;
 

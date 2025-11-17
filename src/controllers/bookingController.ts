@@ -549,3 +549,205 @@ export const updateBookingStatus = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Reschedule a booking (update date/time)
+// @route   PATCH /api/bookings/:id/reschedule
+// @access  Private (User only)
+export const rescheduleBooking = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+  const { id } = req.params;
+  const { sessionDate, startTime, duration } = req.body;
+
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  if (!sessionDate || !startTime || !duration) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide sessionDate, startTime, and duration'
+    });
+  }
+
+  // Validate duration (must be multiple of 30 minutes, between 30 and 240 minutes)
+  if (duration < 30 || duration > 240 || duration % 30 !== 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Duration must be between 30 and 240 minutes and a multiple of 30'
+    });
+  }
+
+  const appointment = await Appointment.findById(id);
+  if (!appointment) {
+    return res.status(404).json({
+      success: false,
+      message: 'Appointment not found'
+    });
+  }
+
+  // Only the user who owns the booking can reschedule
+  const userId = currentUser._id.toString();
+  if (appointment.user.toString() !== userId) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to reschedule this appointment'
+    });
+  }
+
+  // Cannot reschedule cancelled or completed appointments
+  if (appointment.status === 'cancelled' || appointment.status === 'completed') {
+    return res.status(400).json({
+      success: false,
+      message: 'Cannot reschedule a cancelled or completed appointment'
+    });
+  }
+
+  // Calculate end time
+  const [startHour, startMin] = startTime.split(':').map(Number);
+  const startTotal = startHour * 60 + startMin;
+  const endTotal = startTotal + duration;
+  const endHour = Math.floor(endTotal / 60);
+  const endMin = endTotal % 60;
+  const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+
+  // Validate date format and ensure it's not in the past
+  const newSessionDate = new Date(sessionDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sessionDateOnly = new Date(newSessionDate);
+  sessionDateOnly.setHours(0, 0, 0, 0);
+
+  if (sessionDateOnly < today) {
+    return res.status(400).json({
+      success: false,
+      message: 'Cannot reschedule to a past date'
+    });
+  }
+
+  // If rescheduling to today, ensure time is not in the past
+  if (sessionDateOnly.getTime() === today.getTime()) {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMin = now.getMinutes();
+    const currentTotal = currentHour * 60 + currentMin;
+    
+    if (startTotal < currentTotal) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot reschedule to a time in the past'
+      });
+    }
+  }
+
+  // Check if expert exists
+  const expert = await Expert.findById(appointment.expert);
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert not found'
+    });
+  }
+
+  // Check for time slot conflicts (excluding the current appointment)
+  const existingAppointments = await Appointment.find({
+    expert: appointment.expert,
+    sessionDate: newSessionDate,
+    status: { $in: ['pending', 'confirmed'] },
+    _id: { $ne: appointment._id } // Exclude current appointment
+  });
+
+  const conflictingAppointment = existingAppointments.find(apt => {
+    const [aptStartHour, aptStartMin] = apt.startTime.split(':').map(Number);
+    const [aptEndHour, aptEndMin] = apt.endTime.split(':').map(Number);
+    
+    const aptStartTotal = aptStartHour * 60 + aptStartMin;
+    const aptEndTotal = aptEndHour * 60 + aptEndMin;
+    
+    return (startTotal < aptEndTotal && endTotal > aptStartTotal);
+  });
+
+  if (conflictingAppointment) {
+    return res.status(400).json({
+      success: false,
+      message: 'The selected time slot is already booked. Please choose another time.'
+    });
+  }
+
+  // Check expert availability for the new date
+  const availability = await ExpertAvailability.findOne({
+    expert: appointment.expert
+  });
+
+  if (!availability) {
+    return res.status(400).json({
+      success: false,
+      message: 'Expert has not set their availability'
+    });
+  }
+
+  // Parse the requested date to get day name
+  const dayOfWeek = newSessionDate.toLocaleDateString('en-US', { weekday: 'long' }); // e.g., "Tuesday"
+  
+  // Find the day in availability array
+  const dayAvailability = availability.availability.find(
+    day => day.day === dayOfWeek
+  );
+
+  if (!dayAvailability || !dayAvailability.isOpen || !dayAvailability.timeRanges || dayAvailability.timeRanges.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Expert is not available on ${dayOfWeek}`
+    });
+  }
+
+  // Check if the time slot falls within any of the expert's available time ranges for that day
+  let isWithinAvailableHours = false;
+  for (const timeRange of dayAvailability.timeRanges) {
+    const [rangeStartHour, rangeStartMin] = timeRange.startTime.split(':').map(Number);
+    const [rangeEndHour, rangeEndMin] = timeRange.endTime.split(':').map(Number);
+    const rangeStartTotal = rangeStartHour * 60 + rangeStartMin;
+    const rangeEndTotal = rangeEndHour * 60 + rangeEndMin;
+
+    // Check if the requested time slot overlaps with this time range
+    if (startTotal >= rangeStartTotal && endTotal <= rangeEndTotal) {
+      isWithinAvailableHours = true;
+      break;
+    }
+  }
+
+  if (!isWithinAvailableHours) {
+    const timeRangesStr = dayAvailability.timeRanges
+      .map(range => `${range.startTime} - ${range.endTime}`)
+      .join(', ');
+    return res.status(400).json({
+      success: false,
+      message: `The selected time is outside expert's available hours on ${dayOfWeek} (${timeRangesStr})`
+    });
+  }
+
+  // Update appointment
+  appointment.sessionDate = newSessionDate;
+  appointment.startTime = startTime;
+  appointment.endTime = endTime;
+  appointment.duration = duration;
+  appointment.status = 'pending'; // Reset to pending for expert confirmation
+  appointment.cancelledBy = undefined;
+  appointment.cancellationReason = undefined;
+
+  await appointment.save();
+
+  // Populate for response
+  await appointment.populate('user', 'firstName lastName email');
+  await appointment.populate('expert', 'firstName lastName specialization profileImage');
+
+  res.status(200).json({
+    success: true,
+    data: {
+      appointment
+    },
+    message: 'Appointment rescheduled successfully. Waiting for expert confirmation.'
+  });
+});
+
