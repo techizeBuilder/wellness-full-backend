@@ -5,7 +5,8 @@ import {
   getUserBookings,
   getExpertBookings,
   updateBookingStatus,
-  rescheduleBooking
+  rescheduleBooking,
+  getAgoraToken
 } from '../controllers/bookingController';
 import { protect } from '../middlewares/auth';
 
@@ -26,6 +27,9 @@ router.patch('/:id/status', protect, updateBookingStatus);
 
 // Protected route - Reschedule booking
 router.patch('/:id/reschedule', protect, rescheduleBooking);
+
+// Protected route - Generate Agora token
+router.get('/:id/agora-token', protect, getAgoraToken);
 
 export default router;
 

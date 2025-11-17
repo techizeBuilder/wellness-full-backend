@@ -86,6 +86,12 @@ FRONTEND_URL=http://localhost:3000
 
 # Security
 BCRYPT_ROUNDS=12
+
+# Agora
+AGORA_APP_ID=your_agora_app_id
+AGORA_APP_CERTIFICATE=your_agora_app_certificate
+AGORA_TOKEN_EXPIRY_SECONDS=7200
+AGORA_JOIN_WINDOW_MINUTES=5
 ```
 
 ## API Endpoints

@@ -15,6 +15,7 @@ export interface IAppointment extends Document {
   meetingLink?: string;
   cancelledBy?: 'user' | 'expert';
   cancellationReason?: string;
+  agoraChannelName?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,6 +87,10 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
   cancellationReason: {
     type: String,
     maxlength: [500, 'Cancellation reason cannot exceed 500 characters']
+  },
+  agoraChannelName: {
+    type: String,
+    index: true
   }
 }, {
   timestamps: true
@@ -115,6 +120,13 @@ appointmentSchema.pre('save', function(next) {
     return next(new Error('Duration does not match the time difference'));
   }
   
+  next();
+});
+
+appointmentSchema.pre('save', function(next) {
+  if (this.consultationMethod === 'video' && !this.agoraChannelName) {
+    this.agoraChannelName = `booking_${this._id.toString()}`;
+  }
   next();
 });
 

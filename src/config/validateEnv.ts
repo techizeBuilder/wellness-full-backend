@@ -7,7 +7,9 @@ const requiredEnvVars: (keyof typeof ENV)[] = [
   'EMAIL_HOST',
   'EMAIL_USER',
   'EMAIL_PASS',
-  'EMAIL_FROM'
+  'EMAIL_FROM',
+  'AGORA_APP_ID',
+  'AGORA_APP_CERTIFICATE'
 ];
 
 export const validateEnvironment = (): void => {

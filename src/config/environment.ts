@@ -22,6 +22,10 @@ interface Environment {
   INIT_ADMIN_EMAIL: string | undefined;
   INIT_ADMIN_NAME: string | undefined;
   INIT_ADMIN_PASSWORD: string | undefined;
+  AGORA_APP_ID: string | undefined;
+  AGORA_APP_CERTIFICATE: string | undefined;
+  AGORA_TOKEN_EXPIRY_SECONDS: number;
+  AGORA_JOIN_WINDOW_MINUTES: number;
 }
 
 const ENV: Environment = {
@@ -60,7 +64,13 @@ const ENV: Environment = {
   // Admin
   INIT_ADMIN_EMAIL: process.env.INIT_ADMIN_EMAIL || process.env.ADMIN_EMAIL,
   INIT_ADMIN_NAME: process.env.INIT_ADMIN_NAME || process.env.ADMIN_NAME,
-  INIT_ADMIN_PASSWORD: process.env.INIT_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD
+  INIT_ADMIN_PASSWORD: process.env.INIT_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD,
+
+  // Agora
+  AGORA_APP_ID: process.env.AGORA_APP_ID,
+  AGORA_APP_CERTIFICATE: process.env.AGORA_APP_CERTIFICATE,
+  AGORA_TOKEN_EXPIRY_SECONDS: parseInt(process.env.AGORA_TOKEN_EXPIRY_SECONDS || '7200', 10),
+  AGORA_JOIN_WINDOW_MINUTES: parseInt(process.env.AGORA_JOIN_WINDOW_MINUTES || '5', 10)
 };
 
 export default ENV;

@@ -1,8 +1,33 @@
+import { RtcRole, RtcTokenBuilder } from 'agora-access-token';
+import ENV from '../config/environment';
 import { asyncHandler } from '../middlewares/errorHandler';
-import Appointment from '../models/Appointment';
+import Appointment, { IAppointment } from '../models/Appointment';
 import Expert from '../models/Expert';
 import ExpertAvailability from '../models/ExpertAvailability';
 import User from '../models/User';
+
+const getSessionDateTimes = (appointment: IAppointment) => {
+  const sessionDate = new Date(appointment.sessionDate);
+  const [startHour, startMin] = appointment.startTime.split(':').map(Number);
+  const [endHour, endMin] = appointment.endTime.split(':').map(Number);
+
+  const startDateTime = new Date(sessionDate);
+  startDateTime.setHours(startHour, startMin, 0, 0);
+
+  const endDateTime = new Date(sessionDate);
+  endDateTime.setHours(endHour, endMin, 0, 0);
+
+  return { startDateTime, endDateTime };
+};
+
+const deriveAgoraUid = (id: string) => {
+  if (!id) {
+    return Math.floor(Math.random() * 1_000_000);
+  }
+  const cleanId = id.replace(/[^a-fA-F0-9]/g, '');
+  const hexPart = cleanId.slice(-6) || cleanId;
+  return parseInt(hexPart, 16);
+};
 
 // @desc    Get available time slots for an expert on a specific date
 // @route   GET /api/bookings/availability/:expertId
@@ -748,6 +773,120 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
       appointment
     },
     message: 'Appointment rescheduled successfully. Waiting for expert confirmation.'
+  });
+});
+
+// @desc    Generate Agora token for a booking
+// @route   GET /api/bookings/:id/agora-token
+// @access  Private (User or Expert)
+export const getAgoraToken = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+  const { id } = req.params;
+
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  if (!ENV.AGORA_APP_ID || !ENV.AGORA_APP_CERTIFICATE) {
+    return res.status(500).json({
+      success: false,
+      message: 'Agora credentials are not configured on the server'
+    });
+  }
+
+  const appointment = await Appointment.findById(id).populate('user', 'firstName lastName email').populate('expert', 'firstName lastName email');
+
+  if (!appointment) {
+    return res.status(404).json({
+      success: false,
+      message: 'Appointment not found'
+    });
+  }
+
+  if (appointment.consultationMethod !== 'video') {
+    return res.status(400).json({
+      success: false,
+      message: 'Video calling is only available for video consultation bookings'
+    });
+  }
+
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+
+  const isUser = appointment.user._id.toString() === userId;
+
+  let expertRecord = await Expert.findById(userId).select('_id');
+  if (!expertRecord && userEmail) {
+    expertRecord = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+  }
+  const isExpert = expertRecord && appointment.expert._id.toString() === expertRecord._id.toString();
+
+  if (!isUser && !isExpert) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to access this booking'
+    });
+  }
+
+  if (appointment.status !== 'confirmed') {
+    return res.status(400).json({
+      success: false,
+      message: 'Session must be confirmed before joining the call'
+    });
+  }
+
+  const { startDateTime, endDateTime } = getSessionDateTimes(appointment);
+  const joinWindowMinutes = ENV.AGORA_JOIN_WINDOW_MINUTES || 5;
+  const joinWindowMillis = joinWindowMinutes * 60 * 1000;
+  const now = new Date();
+
+  if (now.getTime() < startDateTime.getTime() - joinWindowMillis) {
+    return res.status(400).json({
+      success: false,
+      message: `You can join this session ${joinWindowMinutes} minutes before the scheduled start time`
+    });
+  }
+
+  if (now.getTime() > endDateTime.getTime()) {
+    return res.status(400).json({
+      success: false,
+      message: 'This session has already ended'
+    });
+  }
+
+  if (!appointment.agoraChannelName) {
+    appointment.agoraChannelName = `booking_${appointment._id.toString()}`;
+    await appointment.save();
+  }
+
+  const channelName = appointment.agoraChannelName as string;
+  const uidSource = isExpert ? appointment.expert._id.toString() : appointment.user._id.toString();
+  const uid = deriveAgoraUid(uidSource);
+  const role = RtcRole.PUBLISHER;
+  const privilegeExpiredTs = Math.floor(Date.now() / 1000) + (ENV.AGORA_TOKEN_EXPIRY_SECONDS || 7200);
+
+  const token = RtcTokenBuilder.buildTokenWithUid(
+    ENV.AGORA_APP_ID,
+    ENV.AGORA_APP_CERTIFICATE,
+    channelName,
+    uid,
+    role,
+    privilegeExpiredTs
+  );
+
+  res.status(200).json({
+    success: true,
+    data: {
+      appId: ENV.AGORA_APP_ID,
+      channelName,
+      token,
+      uid,
+      role: 'host',
+      expiresAt: privilegeExpiredTs * 1000
+    }
   });
 });
 
