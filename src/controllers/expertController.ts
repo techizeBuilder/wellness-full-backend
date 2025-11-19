@@ -10,6 +10,25 @@ import { sendOTPEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../servi
 import { deleteFile, getFileUrl } from '../middlewares/upload';
 import { checkEmailExists, checkPhoneExists } from '../utils/emailValidation';
 
+type RecentFeedbackEntry = {
+  id: string;
+  rating: number | null | undefined;
+  comment?: string;
+  submittedAt?: Date | null;
+  sessionDate?: Date | null;
+  user: {
+    _id: string;
+    firstName?: string;
+    lastName?: string;
+    name: string;
+    profileImage: string | null;
+  } | null;
+};
+
+type ExpertWithRecentFeedback = IExpert & {
+  recentFeedback?: RecentFeedbackEntry[];
+};
+
 // @desc    Register expert
 // @route   POST /api/experts/register
 // @access  Public
@@ -840,7 +859,7 @@ const getExpertById = asyncHandler(async (req, res) => {
   }
 
   // Add profile image URL
-  const expertObj = expert.toObject();
+  const expertObj = expert.toObject() as ExpertWithRecentFeedback;
   if (expertObj.profileImage) {
     expertObj.profileImage = getFileUrl(expertObj.profileImage, 'profiles');
   }
@@ -870,7 +889,7 @@ const getExpertById = asyncHandler(async (req, res) => {
       sessionDate: doc.sessionDate,
       user: user
         ? {
-            _id: user._id,
+            _id: user._id?.toString() ?? '',
             firstName: user.firstName,
             lastName: user.lastName,
             name: reviewerName,
