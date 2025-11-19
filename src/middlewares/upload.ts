@@ -8,6 +8,7 @@ const ensureUploadDirs = () => {
   const uploadDirs = [
     'uploads/profiles',
     'uploads/documents',
+    'uploads/prescriptions',
     'uploads/temp'
   ];
 
@@ -21,6 +22,19 @@ const ensureUploadDirs = () => {
 
 // Initialize upload directories
 ensureUploadDirs();
+
+const createFileFilter = (allowedTypes: string[]) => (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  const fileExtension = path.extname(file.originalname).toLowerCase().substring(1);
+  if (allowedTypes.includes(fileExtension)) {
+    cb(null, true);
+  } else {
+    cb(new Error(`File type ${fileExtension} is not allowed. Allowed types: ${allowedTypes.join(', ')}`));
+  }
+};
 
 // Storage configuration for profile images
 const profileStorage = multer.diskStorage({
@@ -47,18 +61,20 @@ const documentStorage = multer.diskStorage({
   }
 });
 
-// File filter function
-const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  // Check if file type is allowed
-  const allowedTypes = process.env.ALLOWED_FILE_TYPES?.split(',') || ['jpeg', 'jpg', 'png', 'gif'];
-  const fileExtension = path.extname(file.originalname).toLowerCase().substring(1);
-  
-  if (allowedTypes.includes(fileExtension)) {
-    cb(null, true);
-  } else {
-    cb(new Error(`File type ${fileExtension} is not allowed. Allowed types: ${allowedTypes.join(', ')}`));
+const prescriptionStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, '..', 'uploads/prescriptions'));
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, `prescription-${uniqueSuffix}${extension}`);
   }
-};
+});
+
+const imageFileFilter = createFileFilter((process.env.ALLOWED_FILE_TYPES?.split(',') || ['jpeg', 'jpg', 'png', 'gif']).map(type => type.trim().toLowerCase()));
+const documentFileFilter = createFileFilter((process.env.ALLOWED_DOCUMENT_TYPES?.split(',') || ['pdf', 'doc', 'docx', 'jpeg', 'jpg', 'png']).map(type => type.trim().toLowerCase()));
+const prescriptionFileFilter = createFileFilter(['pdf']);
 
 // File size limit
 const limits = {
@@ -68,23 +84,31 @@ const limits = {
 // Profile image upload middleware
 export const uploadProfileImage = multer({
   storage: profileStorage,
-  fileFilter: fileFilter,
+  fileFilter: imageFileFilter,
   limits: limits
 }).single('profileImage');
 
 // Document upload middleware
 export const uploadDocument = multer({
   storage: documentStorage,
-  fileFilter: fileFilter,
+  fileFilter: documentFileFilter,
   limits: limits
 }).single('document');
 
 // Multiple files upload middleware
 export const uploadMultiple = multer({
   storage: profileStorage,
-  fileFilter: fileFilter,
+  fileFilter: imageFileFilter,
   limits: limits
 }).array('files', 5); // Max 5 files
+
+export const uploadPrescription = multer({
+  storage: prescriptionStorage,
+  fileFilter: prescriptionFileFilter,
+  limits: {
+    fileSize: parseInt(process.env.PRESCRIPTION_MAX_FILE_SIZE || '5242880', 10)
+  }
+}).single('prescription');
 
 // Error handling middleware for multer
 export const handleUploadError = (error: any, req: Request, res: Response, next: NextFunction) => {
@@ -125,13 +149,13 @@ export const deleteFile = (filePath: string): boolean => {
 };
 
 // Helper function to get file URL
-export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documents' = 'profiles') => {
+export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' = 'profiles') => {
   if (!filename) return null;
   return `/uploads/${type}/${filename}`;
 };
 
 // Helper function to get absolute file path
-export const getFilePath = (filename?: string | null, type: 'profiles' | 'documents' = 'profiles') => {
+export const getFilePath = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' = 'profiles') => {
   if (!filename) return null;
   return path.join(__dirname, '..', 'uploads', type, filename);
 };

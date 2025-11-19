@@ -5,6 +5,7 @@ import Appointment, { IAppointment } from '../models/Appointment';
 import Expert from '../models/Expert';
 import ExpertAvailability from '../models/ExpertAvailability';
 import User from '../models/User';
+import { deleteFile, getFilePath, getFileUrl } from '../middlewares/upload';
 
 const getSessionDateTimes = (appointment: IAppointment) => {
   const sessionDate = new Date(appointment.sessionDate);
@@ -887,6 +888,196 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
       role: 'host',
       expiresAt: privilegeExpiredTs * 1000
     }
+  });
+});
+
+// @desc    Submit feedback for a completed booking
+// @route   POST /api/bookings/:id/feedback
+// @access  Private (User)
+export const submitFeedback = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+  const { id } = req.params;
+  const { rating, comment } = req.body || {};
+
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  const parsedRating = Number(rating);
+  if (!parsedRating || Number.isNaN(parsedRating)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Rating is required'
+    });
+  }
+
+  if (parsedRating < 1 || parsedRating > 5) {
+    return res.status(400).json({
+      success: false,
+      message: 'Rating must be between 1 and 5'
+    });
+  }
+
+  const appointment = await Appointment.findById(id).populate('expert', 'firstName lastName specialization profileImage');
+  if (!appointment) {
+    return res.status(404).json({
+      success: false,
+      message: 'Appointment not found'
+    });
+  }
+
+  if (appointment.user.toString() !== currentUser._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to review this appointment'
+    });
+  }
+
+  if (appointment.status !== 'completed') {
+    return res.status(400).json({
+      success: false,
+      message: 'Feedback can only be submitted after the session is completed'
+    });
+  }
+
+  const trimmedComment = typeof comment === 'string' ? comment.trim() : undefined;
+  if (trimmedComment && trimmedComment.length > 1000) {
+    return res.status(400).json({
+      success: false,
+      message: 'Feedback cannot exceed 1000 characters'
+    });
+  }
+
+  const previousRating = typeof appointment.feedbackRating === 'number'
+    ? appointment.feedbackRating
+    : null;
+
+  appointment.feedbackRating = parsedRating;
+  appointment.feedbackComment = trimmedComment || undefined;
+  appointment.feedbackSubmittedAt = new Date();
+  await appointment.save();
+
+  const expertId = (appointment.expert as any)?._id || appointment.expert;
+  if (expertId) {
+    const expert = await Expert.findById(expertId);
+    if (expert) {
+      const currentAverage = expert.rating?.average || 0;
+      const currentCount = expert.rating?.count || 0;
+      let totalScore = currentAverage * currentCount;
+      let newCount = currentCount;
+
+      if (typeof previousRating === 'number') {
+        totalScore = totalScore - previousRating + parsedRating;
+      } else {
+        totalScore += parsedRating;
+        newCount = currentCount + 1;
+      }
+
+      const newAverage = newCount > 0 ? totalScore / newCount : 0;
+      expert.rating = {
+        average: Number(newAverage.toFixed(2)),
+        count: newCount
+      };
+
+      await expert.save();
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      appointment
+    },
+    message: 'Feedback submitted successfully'
+  });
+});
+
+// @desc    Upload or replace prescription PDF for an appointment
+// @route   POST /api/bookings/:id/prescription
+// @access  Private (Expert)
+export const uploadPrescription = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+  const { id } = req.params;
+
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  const appointment = await Appointment.findById(id);
+  if (!appointment) {
+    return res.status(404).json({
+      success: false,
+      message: 'Appointment not found'
+    });
+  }
+
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+
+  let expertRecord = await Expert.findById(userId).select('_id');
+  if (!expertRecord && userEmail) {
+    expertRecord = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+  }
+
+  if (!expertRecord || appointment.expert.toString() !== expertRecord._id.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: 'You do not have permission to upload a prescription for this appointment'
+    });
+  }
+
+  if (appointment.status !== 'completed') {
+    return res.status(400).json({
+      success: false,
+      message: 'Prescriptions can only be uploaded after the session is completed'
+    });
+  }
+
+  const file = req.file as Express.Multer.File | undefined;
+  if (!file) {
+    return res.status(400).json({
+      success: false,
+      message: 'Prescription PDF is required'
+    });
+  }
+
+  if (!file.mimetype.includes('pdf')) {
+    return res.status(400).json({
+      success: false,
+      message: 'Only PDF files are allowed'
+    });
+  }
+
+  if (appointment.prescription?.fileName) {
+    const currentFilePath = getFilePath(appointment.prescription.fileName, 'prescriptions');
+    if (currentFilePath) {
+      deleteFile(currentFilePath);
+    }
+  }
+
+  appointment.prescription = {
+    fileName: file.filename,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size,
+    url: getFileUrl(file.filename, 'prescriptions') || '',
+    uploadedAt: new Date()
+  };
+
+  await appointment.save();
+
+  res.status(200).json({
+    success: true,
+    data: {
+      prescription: appointment.prescription
+    },
+    message: 'Prescription uploaded successfully'
   });
 });
 

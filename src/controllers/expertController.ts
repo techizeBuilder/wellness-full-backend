@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import Expert, { IExpert } from '../models/Expert';
+import Appointment from '../models/Appointment';
 import BankAccount from '../models/BankAccount';
 import ExpertAvailability from '../models/ExpertAvailability';
 import type { SortOrder } from 'mongoose';
@@ -843,6 +844,41 @@ const getExpertById = asyncHandler(async (req, res) => {
   if (expertObj.profileImage) {
     expertObj.profileImage = getFileUrl(expertObj.profileImage, 'profiles');
   }
+
+  const feedbackDocs = await Appointment.find({
+    expert: expert._id,
+    feedbackRating: { $exists: true, $ne: null }
+  })
+    .sort({ feedbackSubmittedAt: -1, updatedAt: -1 })
+    .limit(10)
+    .populate('user', 'firstName lastName profileImage');
+
+  expertObj.recentFeedback = feedbackDocs.map(doc => {
+    const user = doc.user as any;
+    const reviewerName = user
+      ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Client'
+      : 'Client';
+    const reviewerImage = user?.profileImage
+      ? getFileUrl(user.profileImage, 'profiles')
+      : null;
+
+    return {
+      id: doc._id.toString(),
+      rating: doc.feedbackRating,
+      comment: doc.feedbackComment,
+      submittedAt: doc.feedbackSubmittedAt,
+      sessionDate: doc.sessionDate,
+      user: user
+        ? {
+            _id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            name: reviewerName,
+            profileImage: reviewerImage
+          }
+        : null
+    };
+  });
 
   res.status(200).json({
     success: true,

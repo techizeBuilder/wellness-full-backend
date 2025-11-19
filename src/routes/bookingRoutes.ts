@@ -6,9 +6,12 @@ import {
   getExpertBookings,
   updateBookingStatus,
   rescheduleBooking,
-  getAgoraToken
+  getAgoraToken,
+  submitFeedback,
+  uploadPrescription
 } from '../controllers/bookingController';
 import { protect } from '../middlewares/auth';
+import { uploadPrescription as uploadPrescriptionMiddleware, handleUploadError } from '../middlewares/upload';
 
 const router = express.Router();
 
@@ -30,6 +33,18 @@ router.patch('/:id/reschedule', protect, rescheduleBooking);
 
 // Protected route - Generate Agora token
 router.get('/:id/agora-token', protect, getAgoraToken);
+
+// Protected route - Submit feedback
+router.post('/:id/feedback', protect, submitFeedback);
+
+// Protected route - Upload prescription
+router.post(
+  '/:id/prescription',
+  protect,
+  uploadPrescriptionMiddleware,
+  handleUploadError,
+  uploadPrescription
+);
 
 export default router;
 

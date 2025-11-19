@@ -16,6 +16,17 @@ export interface IAppointment extends Document {
   cancelledBy?: 'user' | 'expert';
   cancellationReason?: string;
   agoraChannelName?: string;
+  feedbackRating?: number;
+  feedbackComment?: string;
+  feedbackSubmittedAt?: Date;
+  prescription?: {
+    fileName?: string;
+    originalName?: string;
+    mimeType?: string;
+    size?: number;
+    url?: string;
+    uploadedAt?: Date;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
@@ -91,6 +102,38 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
   agoraChannelName: {
     type: String,
     index: true
+  },
+  feedbackRating: {
+    type: Number,
+    min: [1, 'Rating must be at least 1'],
+    max: [5, 'Rating cannot exceed 5']
+  },
+  feedbackComment: {
+    type: String,
+    maxlength: [1000, 'Feedback cannot exceed 1000 characters']
+  },
+  feedbackSubmittedAt: {
+    type: Date
+  },
+  prescription: {
+    fileName: {
+      type: String
+    },
+    originalName: {
+      type: String
+    },
+    mimeType: {
+      type: String
+    },
+    size: {
+      type: Number
+    },
+    url: {
+      type: String
+    },
+    uploadedAt: {
+      type: Date
+    }
   }
 }, {
   timestamps: true
@@ -105,6 +148,14 @@ appointmentSchema.index({ sessionDate: 1, startTime: 1, endTime: 1 });
 
 // Pre-save validation: ensure end time is after start time
 appointmentSchema.pre('save', function(next) {
+  if (
+    !this.isModified('startTime') &&
+    !this.isModified('endTime') &&
+    !this.isModified('duration')
+  ) {
+    return next();
+  }
+
   const [startHour, startMin] = this.startTime.split(':').map(Number);
   const [endHour, endMin] = this.endTime.split(':').map(Number);
   const startTotal = startHour * 60 + startMin;
