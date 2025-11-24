@@ -15,6 +15,12 @@ interface ICertification {
   expiryDate?: Date;
 }
 
+interface ICertificate {
+  filename?: string;
+  originalName?: string;
+  uploadDate?: Date;
+}
+
 interface IRating {
   average: number;
   count: number;
@@ -50,6 +56,8 @@ export interface IExpert extends Document {
     type?: string;
     uploadDate?: Date;
   }[];
+  specialties?: string[];
+  certificates?: ICertificate[];
   hourlyRate?: number;
   availability?: Availability;
   languages: string[];
@@ -196,6 +204,22 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
       type: String,
       enum: ['certificate', 'license', 'degree', 'other'],
       default: 'certificate'
+    },
+    uploadDate: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  specialties: [{
+    type: String,
+    trim: true
+  }],
+  certificates: [{
+    filename: {
+      type: String
+    },
+    originalName: {
+      type: String
     },
     uploadDate: {
       type: Date,

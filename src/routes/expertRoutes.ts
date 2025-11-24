@@ -16,10 +16,12 @@ import {
   getBankAccount,
   createOrUpdateBankAccount,
   getAvailability,
-  createOrUpdateAvailability
+  createOrUpdateAvailability,
+  uploadCertificates,
+  deleteCertificate
 } from '../controllers/expertController';
 import { protect, authorize, optionalAuth } from '../middlewares/auth';
-import { uploadProfileImage, handleUploadError } from '../middlewares/upload';
+import { uploadProfileImage, uploadCertificates as uploadCertificatesMiddleware, handleUploadError } from '../middlewares/upload';
 import {
   expertRegisterSchema,
   loginSchema,
@@ -105,6 +107,10 @@ router.post('/bank-account', validate(bankAccountSchema), createOrUpdateBankAcco
 // Availability routes - MUST come before /:id route to avoid route conflicts
 router.get('/availability', getAvailability);
 router.post('/availability', createOrUpdateAvailability);
+
+// Certificate routes - MUST come before /:id route to avoid route conflicts
+router.post('/certificates', uploadCertificatesMiddleware, handleUploadError, uploadCertificates);
+router.delete('/certificates/:certificateId', deleteCertificate);
 
 router.put('/profile', uploadProfileImage, handleUploadError, validate(updateExpertProfileSchema), updateExpertProfile);
 

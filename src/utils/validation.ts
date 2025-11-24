@@ -234,6 +234,7 @@ export const updateExpertProfileSchema = Joi.object({
   languages: Joi.array().items(Joi.string().trim()).optional(),
   consultationMethods: Joi.array().items(Joi.string().trim()).optional(),
   sessionType: Joi.array().items(Joi.string().valid('one-on-one', 'one-to-many')).optional(),
+  specialties: Joi.array().items(Joi.string().trim()).optional(),
   availability: Joi.object().optional()
 });
 

@@ -110,6 +110,27 @@ export const uploadPrescription = multer({
   }
 }).single('prescription');
 
+// Certificate storage (PDF only)
+const certificateStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, '..', 'uploads/documents'));
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `certificate-${uniqueSuffix}.pdf`);
+  }
+});
+
+const certificateFileFilter = createFileFilter(['pdf']);
+
+export const uploadCertificates = multer({
+  storage: certificateStorage,
+  fileFilter: certificateFileFilter,
+  limits: {
+    fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10) // 5MB default
+  }
+}).array('certificates', 3); // Max 3 certificates
+
 // Error handling middleware for multer
 export const handleUploadError = (error: any, req: Request, res: Response, next: NextFunction) => {
   if (error instanceof MulterError) {
@@ -159,3 +180,6 @@ export const getFilePath = (filename?: string | null, type: 'profiles' | 'docume
   if (!filename) return null;
   return path.join(__dirname, '..', 'uploads', type, filename);
 };
+
+// Export uploadCertificates middleware
+export { uploadCertificates };

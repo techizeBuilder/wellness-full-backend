@@ -7,7 +7,7 @@ import type { SortOrder } from 'mongoose';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import { sendOTPEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/emailService';
-import { deleteFile, getFileUrl } from '../middlewares/upload';
+import { deleteFile, getFileUrl, getFilePath } from '../middlewares/upload';
 import { checkEmailExists, checkPhoneExists } from '../utils/emailValidation';
 
 type RecentFeedbackEntry = {
@@ -389,7 +389,7 @@ const updateExpertProfile = asyncHandler(async (req, res) => {
   const allowedFields = [
     'firstName', 'lastName', 'phone', 'specialization', 'experience',
     'bio', 'education', 'hourlyRate', 'qualifications', 'languages', 'consultationMethods',
-    'sessionType', 'availability'
+    'sessionType', 'availability', 'specialties'
   ];
   
   const updateData: Record<string, unknown> = {};
@@ -397,7 +397,7 @@ const updateExpertProfile = asyncHandler(async (req, res) => {
   // Only include allowed fields
   allowedFields.forEach(field => {
     if (req.body[field] !== undefined) {
-      if (field === 'qualifications' || field === 'languages' || field === 'consultationMethods' || field === 'sessionType') {
+      if (field === 'qualifications' || field === 'languages' || field === 'consultationMethods' || field === 'sessionType' || field === 'specialties') {
         try {
           updateData[field] = typeof req.body[field] === 'string' 
             ? JSON.parse(req.body[field]) 
@@ -1232,6 +1232,153 @@ const createOrUpdateAvailability = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Upload certificates (max 3 PDFs)
+// @route   POST /api/experts/certificates
+// @access  Private (Expert)
+const uploadCertificates = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+  
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  const expertId = currentUser._id.toString();
+  const expert = await Expert.findById(expertId);
+
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert not found'
+    });
+  }
+
+  const files = req.files as Express.Multer.File[];
+  
+  if (!files || files.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'No files uploaded'
+    });
+  }
+
+  // Check if adding these files would exceed the limit of 3
+  const currentCertCount = expert.certificates?.length || 0;
+  if (currentCertCount + files.length > 3) {
+    // Delete uploaded files
+    files.forEach(file => {
+      const filePath = getFilePath(file.filename, 'documents');
+      if (filePath) deleteFile(filePath);
+    });
+    return res.status(400).json({
+      success: false,
+      message: `Maximum 3 certificates allowed. You currently have ${currentCertCount} certificate(s).`
+    });
+  }
+
+  // Validate all files are PDFs
+  const invalidFiles = files.filter(file => !file.mimetype.includes('pdf'));
+  if (invalidFiles.length > 0) {
+    // Delete invalid files
+    files.forEach(file => {
+      const filePath = getFilePath(file.filename, 'documents');
+      if (filePath) deleteFile(filePath);
+    });
+    return res.status(400).json({
+      success: false,
+      message: 'Only PDF files are allowed for certificates'
+    });
+  }
+
+  // Add certificates to expert
+  const newCertificates = files.map(file => ({
+    filename: file.filename,
+    originalName: file.originalname,
+    uploadDate: new Date()
+  }));
+
+  if (!expert.certificates) {
+    expert.certificates = [];
+  }
+  expert.certificates.push(...newCertificates);
+  await expert.save();
+
+  // Return certificates with URLs
+  const certificatesWithUrls = expert.certificates.map((cert: any) => ({
+    ...cert.toObject ? cert.toObject() : cert,
+    url: getFileUrl(cert.filename, 'documents')
+  }));
+
+  res.status(200).json({
+    success: true,
+    message: 'Certificates uploaded successfully',
+    data: { certificates: certificatesWithUrls }
+  });
+});
+
+// @desc    Delete a certificate
+// @route   DELETE /api/experts/certificates/:certificateId
+// @access  Private (Expert)
+const deleteCertificate = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+  const { certificateId } = req.params;
+  
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  const expertId = currentUser._id.toString();
+  const expert = await Expert.findById(expertId);
+
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert not found'
+    });
+  }
+
+  if (!expert.certificates || expert.certificates.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: 'No certificates found'
+    });
+  }
+
+  // Find the certificate index
+  const certIndex = expert.certificates.findIndex(
+    (cert: any) => cert._id?.toString() === certificateId || 
+                   (cert.filename && cert.filename === certificateId)
+  );
+
+  if (certIndex === -1) {
+    return res.status(404).json({
+      success: false,
+      message: 'Certificate not found'
+    });
+  }
+
+  // Delete the file
+  const certificate = expert.certificates[certIndex];
+  if (certificate.filename) {
+    const filePath = getFilePath(certificate.filename, 'documents');
+    if (filePath) deleteFile(filePath);
+  }
+
+  // Remove from array
+  expert.certificates.splice(certIndex, 1);
+  await expert.save();
+
+  res.status(200).json({
+    success: true,
+    message: 'Certificate deleted successfully'
+  });
+});
+
 export {
   registerExpert,
   loginExpert,
@@ -1248,5 +1395,7 @@ export {
   getBankAccount,
   createOrUpdateBankAccount,
   getAvailability,
-  createOrUpdateAvailability
+  createOrUpdateAvailability,
+  uploadCertificates,
+  deleteCertificate
 };

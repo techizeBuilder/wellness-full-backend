@@ -22,6 +22,7 @@ import { errorHandler, notFound } from './middlewares/errorHandler';
 import authRoutes from './routes/authRoutes';
 import expertRoutes from './routes/expertRoutes';
 import bookingRoutes from './routes/bookingRoutes';
+import planRoutes from './routes/planRoutes';
 import adminRoutes from './routes/admin/adminRoutes';
 import userRoutes from './routes/admin/userRoutes';
 import adminExpertRoutes from './routes/admin/expertRoutes';
@@ -108,6 +109,7 @@ app.get('/health', (req: Request, res: Response) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/experts', expertRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/plans', planRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/users', userRoutes);
 app.use('/api/admin/experts', adminExpertRoutes);
