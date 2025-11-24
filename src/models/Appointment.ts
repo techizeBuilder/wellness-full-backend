@@ -11,6 +11,13 @@ export interface IAppointment extends Document {
   sessionType: string; // 'one-on-one', 'one-to-many'
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'rejected';
   price: number;
+  planId?: mongoose.Types.ObjectId;
+  planType?: 'single' | 'monthly';
+  planInstanceId?: string;
+  planName?: string;
+  planSessionNumber?: number;
+  planTotalSessions?: number;
+  planPrice?: number;
   notes?: string;
   meetingLink?: string;
   cancelledBy?: 'user' | 'expert';
@@ -84,6 +91,33 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
     required: [true, 'Price is required'],
     min: [0, 'Price cannot be negative']
   },
+  planId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Plan'
+  },
+  planType: {
+    type: String,
+    enum: ['single', 'monthly']
+  },
+  planInstanceId: {
+    type: String,
+    index: true
+  },
+  planName: {
+    type: String
+  },
+  planSessionNumber: {
+    type: Number,
+    min: [1, 'Plan session number must be at least 1']
+  },
+  planTotalSessions: {
+    type: Number,
+    min: [1, 'Plan total sessions must be at least 1']
+  },
+  planPrice: {
+    type: Number,
+    min: [0, 'Plan price cannot be negative']
+  },
   notes: {
     type: String,
     maxlength: [1000, 'Notes cannot exceed 1000 characters']
@@ -145,6 +179,7 @@ appointmentSchema.index({ expert: 1, sessionDate: 1 });
 appointmentSchema.index({ expert: 1, sessionDate: 1, startTime: 1 });
 appointmentSchema.index({ status: 1 });
 appointmentSchema.index({ sessionDate: 1, startTime: 1, endTime: 1 });
+appointmentSchema.index({ planId: 1 });
 
 // Pre-save validation: ensure end time is after start time
 appointmentSchema.pre('save', function(next) {

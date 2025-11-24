@@ -11,8 +11,9 @@ import { protect, authorize, optionalAuth } from '../middlewares/auth';
 
 const router = express.Router();
 
-// Public route - Get plans for an expert
+// Public routes
 router.get('/expert/:expertId', getExpertPlans);
+router.get('/:id', optionalAuth, getPlanById);
 
 // Protected routes - Expert only
 router.use(protect);
@@ -20,9 +21,6 @@ router.use(authorize('expert'));
 
 // Get all plans for current expert
 router.get('/', getMyPlans);
-
-// Get plan by ID (expert can see their own, public can see active ones)
-router.get('/:id', optionalAuth, getPlanById);
 
 // Create, update, delete plans
 router.post('/', createPlan);

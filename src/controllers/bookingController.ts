@@ -1,10 +1,12 @@
 import { RtcRole, RtcTokenBuilder } from 'agora-access-token';
+import mongoose from 'mongoose';
 import ENV from '../config/environment';
 import { asyncHandler } from '../middlewares/errorHandler';
 import Appointment, { IAppointment } from '../models/Appointment';
 import Expert from '../models/Expert';
 import ExpertAvailability from '../models/ExpertAvailability';
 import User from '../models/User';
+import Plan from '../models/Plan';
 import { deleteFile, getFilePath, getFileUrl } from '../middlewares/upload';
 
 const getSessionDateTimes = (appointment: IAppointment) => {
@@ -203,44 +205,20 @@ export const createBooking = asyncHandler(async (req, res) => {
     duration,
     consultationMethod,
     sessionType,
-    notes
+    notes,
+    planId,
+    planType,
+    planSessions
   } = req.body;
 
-  // Validation
-  if (!expertId || !sessionDate || !startTime || !duration || !consultationMethod || !sessionType) {
+  if (!expertId) {
     return res.status(400).json({
       success: false,
-      message: 'Please provide all required fields: expertId, sessionDate, startTime, duration, consultationMethod, sessionType'
+      message: 'Expert ID is required'
     });
   }
 
-  // Validate consultation method
-  const validConsultationMethods = ['video', 'audio', 'chat', 'in-person'];
-  if (!validConsultationMethods.includes(consultationMethod)) {
-    return res.status(400).json({
-      success: false,
-      message: `Invalid consultation method. Must be one of: ${validConsultationMethods.join(', ')}`
-    });
-  }
-
-  // Validate session type
-  const validSessionTypes = ['one-on-one', 'one-to-many'];
-  if (!validSessionTypes.includes(sessionType)) {
-    return res.status(400).json({
-      success: false,
-      message: `Invalid session type. Must be one of: ${validSessionTypes.join(', ')}`
-    });
-  }
-
-  // Validate duration (must be multiple of 30 minutes, between 30 and 240 minutes)
-  if (duration < 30 || duration > 240 || duration % 30 !== 0) {
-    return res.status(400).json({
-      success: false,
-      message: 'Duration must be between 30 and 240 minutes and a multiple of 30'
-    });
-  }
-
-  // Check if expert exists
+  // Fetch expert and availability once for all validation flows
   const expert = await Expert.findById(expertId);
   if (!expert) {
     return res.status(404).json({
@@ -249,49 +227,100 @@ export const createBooking = asyncHandler(async (req, res) => {
     });
   }
 
-  // Check if expert has the requested consultation method
-  if (expert.consultationMethods && expert.consultationMethods.length > 0) {
-    if (!expert.consultationMethods.includes(consultationMethod)) {
-      return res.status(400).json({
-        success: false,
-        message: `Expert does not offer ${consultationMethod} consultations`
+  const availabilityDoc = await ExpertAvailability.findOne({ expert: expertId });
+
+  type SlotInput = {
+    sessionDate?: string;
+    startTime?: string;
+    duration?: number;
+    consultationMethod?: string;
+    sessionType?: string;
+  };
+
+  const validateSlotInput = async (slotInput: SlotInput) => {
+    const {
+      sessionDate: slotDate,
+      startTime: slotStart,
+      duration: slotDuration,
+      consultationMethod: slotMethod,
+      sessionType: slotSessionType
+    } = slotInput;
+
+    if (!slotDate || !slotStart || !slotDuration || !slotMethod || !slotSessionType) {
+      res.status(400).json({
+      success: false,
+        message: 'Please provide sessionDate, startTime, duration, consultationMethod, and sessionType for each session'
       });
+      return null;
     }
+
+    const validConsultationMethods = ['video', 'audio', 'chat', 'in-person'];
+    if (!validConsultationMethods.includes(slotMethod)) {
+      res.status(400).json({
+      success: false,
+        message: `Invalid consultation method. Must be one of: ${validConsultationMethods.join(', ')}`
+      });
+      return null;
+    }
+
+    // Ensure expert supports the consultation method
+    if (expert.consultationMethods && expert.consultationMethods.length > 0) {
+      if (!expert.consultationMethods.includes(slotMethod)) {
+        res.status(400).json({
+      success: false,
+          message: `Expert does not offer ${slotMethod} consultations`
+        });
+        return null;
+      }
+    }
+
+    const validSessionTypes = ['one-on-one', 'one-to-many'];
+    if (!validSessionTypes.includes(slotSessionType)) {
+      res.status(400).json({
+        success: false,
+        message: `Invalid session type. Must be one of: ${validSessionTypes.join(', ')}`
+      });
+      return null;
   }
 
-  // Check if expert has the requested session type
   if (expert.sessionType && expert.sessionType.length > 0) {
-    if (!expert.sessionType.includes(sessionType)) {
-      return res.status(400).json({
+      if (!expert.sessionType.includes(slotSessionType)) {
+        res.status(400).json({
         success: false,
-        message: `Expert does not offer ${sessionType} sessions`
-      });
+          message: `Expert does not offer ${slotSessionType} sessions`
+        });
+        return null;
+      }
     }
-  }
 
-  // Parse session date and time
-  const sessionDateTime = new Date(sessionDate);
+    if (slotDuration < 30 || slotDuration > 240 || slotDuration % 30 !== 0) {
+      res.status(400).json({
+        success: false,
+        message: 'Duration must be between 30 and 240 minutes and a multiple of 30'
+      });
+      return null;
+    }
+
+    const sessionDateTime = new Date(slotDate);
   if (isNaN(sessionDateTime.getTime())) {
-    return res.status(400).json({
+      res.status(400).json({
       success: false,
       message: 'Invalid session date format'
     });
+      return null;
   }
 
-  // Calculate end time
-  const [startHour, startMin] = startTime.split(':').map(Number);
-  const endTotalMinutes = startHour * 60 + startMin + duration;
+    const [startHour, startMin] = slotStart.split(':').map(Number);
+    const endTotalMinutes = startHour * 60 + startMin + slotDuration;
   const endHour = Math.floor(endTotalMinutes / 60);
   const endMin = endTotalMinutes % 60;
   const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
 
-  // Check if slot is available
   const startOfDay = new Date(sessionDateTime);
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(sessionDateTime);
   endOfDay.setHours(23, 59, 59, 999);
 
-  // Check for conflicting appointments by comparing time strings
   const existingAppointments = await Appointment.find({
     expert: expertId,
     sessionDate: {
@@ -301,12 +330,10 @@ export const createBooking = asyncHandler(async (req, res) => {
     status: { $in: ['pending', 'confirmed'] }
   }).select('startTime endTime');
 
-  // Check if any existing appointment overlaps with the requested time
   const conflictingAppointment = existingAppointments.find(apt => {
-    // Convert times to minutes for easier comparison
     const [aptStartHour, aptStartMin] = apt.startTime.split(':').map(Number);
     const [aptEndHour, aptEndMin] = apt.endTime.split(':').map(Number);
-    const [reqStartHour, reqStartMin] = startTime.split(':').map(Number);
+      const [reqStartHour, reqStartMin] = slotStart.split(':').map(Number);
     const [reqEndHour, reqEndMin] = endTime.split(':').map(Number);
     
     const aptStartTotal = aptStartHour * 60 + aptStartMin;
@@ -314,44 +341,261 @@ export const createBooking = asyncHandler(async (req, res) => {
     const reqStartTotal = reqStartHour * 60 + reqStartMin;
     const reqEndTotal = reqEndHour * 60 + reqEndMin;
     
-    // Check for overlap: appointments overlap if one starts before the other ends
     return (reqStartTotal < aptEndTotal && reqEndTotal > aptStartTotal);
   });
 
   if (conflictingAppointment) {
-    return res.status(400).json({
+      res.status(400).json({
       success: false,
       message: 'This time slot is already booked. Please select another time.'
     });
+      return null;
   }
 
-  // Check expert availability for this day
+    if (availabilityDoc) {
   const dayOfWeek = sessionDateTime.toLocaleDateString('en-US', { weekday: 'long' });
-  const availability = await ExpertAvailability.findOne({ expert: expertId });
-  
-  if (availability) {
-    const dayAvailability = availability.availability.find(
+      const dayAvailability = availabilityDoc.availability.find(
       day => day.day === dayOfWeek
     );
 
     if (!dayAvailability || !dayAvailability.isOpen) {
-      return res.status(400).json({
+        res.status(400).json({
         success: false,
         message: `Expert is not available on ${dayOfWeek}`
       });
+        return null;
     }
 
-    // Check if the requested time is within available time ranges
     const isWithinRange = dayAvailability.timeRanges.some(range => {
-      return startTime >= range.startTime && endTime <= range.endTime;
+        return slotStart >= range.startTime && endTime <= range.endTime;
     });
 
     if (!isWithinRange) {
-      return res.status(400).json({
+        res.status(400).json({
         success: false,
         message: 'Requested time is outside expert\'s available hours'
       });
+        return null;
+      }
     }
+
+    return { sessionDateTime, endTime };
+  };
+
+  // Handle plan-based bookings
+  if (planId) {
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({
+        success: false,
+        message: 'Plan not found'
+      });
+    }
+
+    if (plan.expert.toString() !== expertId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Plan does not belong to this expert'
+      });
+    }
+
+    if (plan.isActive === false) {
+      return res.status(400).json({
+        success: false,
+        message: 'This plan is no longer active'
+      });
+    }
+
+    const resolvedPlanType = plan.type as 'single' | 'monthly';
+    if (planType && planType !== resolvedPlanType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Plan type mismatch'
+      });
+    }
+
+    if (!planSessions || planSessions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide session details for the selected plan'
+      });
+    }
+
+    const planInstanceId = new mongoose.Types.ObjectId().toString();
+
+    if (resolvedPlanType === 'single') {
+      const sessionPayload = planSessions[0];
+      const finalDuration = sessionPayload.duration || plan.duration || 60;
+
+      const validatedSlot = await validateSlotInput({
+        sessionDate: sessionPayload.sessionDate,
+        startTime: sessionPayload.startTime,
+        duration: finalDuration,
+        consultationMethod: sessionPayload.consultationMethod,
+        sessionType: sessionPayload.sessionType
+      });
+
+      if (!validatedSlot) {
+        return;
+      }
+
+      if (plan.sessionFormat && plan.sessionFormat !== sessionPayload.sessionType) {
+        return res.status(400).json({
+          success: false,
+          message: `Plan requires ${plan.sessionFormat} sessions`
+        });
+      }
+
+      const price = plan.price ?? Math.round(((expert.hourlyRate || 0) * finalDuration) / 60);
+
+      const appointment = await Appointment.create({
+        user: currentUser._id,
+        expert: expertId,
+        sessionDate: validatedSlot.sessionDateTime,
+        startTime: sessionPayload.startTime,
+        endTime: validatedSlot.endTime,
+        duration: finalDuration,
+        consultationMethod: sessionPayload.consultationMethod,
+        sessionType: sessionPayload.sessionType,
+        price,
+        notes: notes || undefined,
+        status: 'pending',
+        planId: plan._id,
+        planType: resolvedPlanType,
+        planInstanceId,
+        planName: plan.name,
+        planSessionNumber: 1,
+        planTotalSessions: 1,
+        planPrice: price
+      });
+
+      await appointment.populate('user', 'firstName lastName email');
+      await appointment.populate('expert', 'firstName lastName specialization profileImage');
+
+      return res.status(201).json({
+        success: true,
+        data: {
+          planInstanceId,
+          appointment
+        },
+        message: 'Plan booking created successfully. Waiting for expert confirmation.'
+      });
+    }
+
+    // Monthly subscription flow
+    if (!plan.classesPerMonth || !plan.monthlyPrice) {
+      return res.status(400).json({
+        success: false,
+        message: 'Monthly plans must define classes per month and monthly price'
+      });
+    }
+
+    if (planSessions.length !== plan.classesPerMonth) {
+      return res.status(400).json({
+        success: false,
+        message: `Please schedule ${plan.classesPerMonth} classes for this subscription`
+      });
+    }
+
+    // Ensure user is not scheduling duplicate slots within the same plan booking
+    const uniqueKeys = new Set<string>();
+    for (const sessionPayload of planSessions) {
+      const key = `${sessionPayload.sessionDate}|${sessionPayload.startTime}`;
+      if (uniqueKeys.has(key)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each session in the subscription must have a unique date and start time'
+        });
+      }
+      uniqueKeys.add(key);
+    }
+
+    const perSessionPrice = Math.round((plan.monthlyPrice / plan.classesPerMonth) * 100) / 100;
+    const createdAppointments: IAppointment[] = [];
+
+    for (let i = 0; i < planSessions.length; i++) {
+      const sessionPayload = planSessions[i];
+      const finalDuration = sessionPayload.duration || plan.duration || 60;
+
+      const validatedSlot = await validateSlotInput({
+        sessionDate: sessionPayload.sessionDate,
+        startTime: sessionPayload.startTime,
+        duration: finalDuration,
+        consultationMethod: sessionPayload.consultationMethod,
+        sessionType: sessionPayload.sessionType
+      });
+
+      if (!validatedSlot) {
+        return;
+      }
+
+      if (plan.sessionFormat && plan.sessionFormat !== sessionPayload.sessionType) {
+        return res.status(400).json({
+          success: false,
+          message: `Plan requires ${plan.sessionFormat} sessions`
+        });
+      }
+
+      const appointment = await Appointment.create({
+        user: currentUser._id,
+        expert: expertId,
+        sessionDate: validatedSlot.sessionDateTime,
+        startTime: sessionPayload.startTime,
+        endTime: validatedSlot.endTime,
+        duration: finalDuration,
+        consultationMethod: sessionPayload.consultationMethod,
+        sessionType: sessionPayload.sessionType,
+        price: perSessionPrice,
+        notes: notes || undefined,
+        status: 'pending',
+        planId: plan._id,
+        planType: resolvedPlanType,
+        planInstanceId,
+        planName: plan.name,
+        planSessionNumber: i + 1,
+        planTotalSessions: plan.classesPerMonth,
+        planPrice: perSessionPrice
+      });
+
+      createdAppointments.push(appointment);
+    }
+
+    await Promise.all(
+      createdAppointments.map(async appointment => {
+        await appointment.populate('user', 'firstName lastName email');
+        await appointment.populate('expert', 'firstName lastName specialization profileImage');
+      })
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        planInstanceId,
+        totalPrice: plan.monthlyPrice,
+        totalSessions: plan.classesPerMonth,
+        appointments: createdAppointments
+      },
+      message: 'Subscription booking created successfully. Waiting for expert confirmation.'
+    });
+  }
+
+  // Validation for single ad-hoc bookings (no plan)
+  if (!sessionDate || !startTime || !duration || !consultationMethod || !sessionType) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide all required fields: expertId, sessionDate, startTime, duration, consultationMethod, sessionType'
+    });
+  }
+  const singleSlot = await validateSlotInput({
+    sessionDate,
+    startTime,
+    duration,
+    consultationMethod,
+    sessionType
+  });
+
+  if (!singleSlot) {
+    return;
   }
 
   // Calculate price (based on hourly rate and duration)
@@ -362,9 +606,9 @@ export const createBooking = asyncHandler(async (req, res) => {
   const appointment = await Appointment.create({
     user: currentUser._id,
     expert: expertId,
-    sessionDate: sessionDateTime,
+    sessionDate: singleSlot.sessionDateTime,
     startTime,
-    endTime,
+    endTime: singleSlot.endTime,
     duration,
     consultationMethod,
     sessionType,
