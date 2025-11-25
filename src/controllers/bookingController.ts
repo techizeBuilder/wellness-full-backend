@@ -1084,7 +1084,7 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
   }
 
   const { startDateTime, endDateTime } = getSessionDateTimes(appointment);
-  const joinWindowMinutes = ENV.AGORA_JOIN_WINDOW_MINUTES || 5;
+  const joinWindowMinutes = Math.min(Math.max(ENV.AGORA_JOIN_WINDOW_MINUTES || 2, 0), 2);
   const joinWindowMillis = joinWindowMinutes * 60 * 1000;
   const now = new Date();
 

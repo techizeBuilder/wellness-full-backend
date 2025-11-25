@@ -26,6 +26,8 @@ export interface IAppointment extends Document {
   feedbackRating?: number;
   feedbackComment?: string;
   feedbackSubmittedAt?: Date;
+  userReminderSentAt?: Date;
+  expertReminderSentAt?: Date;
   prescription?: {
     fileName?: string;
     originalName?: string;
@@ -147,6 +149,12 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
     maxlength: [1000, 'Feedback cannot exceed 1000 characters']
   },
   feedbackSubmittedAt: {
+    type: Date
+  },
+  userReminderSentAt: {
+    type: Date
+  },
+  expertReminderSentAt: {
     type: Date
   },
   prescription: {

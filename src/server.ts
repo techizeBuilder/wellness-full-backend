@@ -31,6 +31,7 @@ import adminBookingRoutes from './routes/admin/bookingRoutes';
 
 // Import seeders
 import { runSeeders } from './seeders';
+import { startAppointmentReminderScheduler } from './services/appointmentReminderService';
 
 // Validate environment variables
 validateEnvironment();
@@ -145,6 +146,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info(`Expert API: http://localhost:${PORT}/api/experts`);
   logger.info(`Uploads: http://localhost:${PORT}/uploads`);
 });
+
+startAppointmentReminderScheduler();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err: Error, promise: Promise<any>) => {

@@ -18,6 +18,10 @@ export interface IUser extends Document {
   profileImage?: string | null;
   dateOfBirth?: Date;
   gender?: 'male' | 'female' | 'other';
+  bloodGroup?: string | null;
+  weightKg?: number | null;
+  bloodPressure?: string | null;
+  healthProfileUpdatedAt?: Date;
   isActive: boolean;
   lastLogin?: Date;
   passwordResetToken?: string;
@@ -137,6 +141,35 @@ const userSchema = new mongoose.Schema<IUser, UserModel>({
   gender: {
     type: String,
     enum: ['male', 'female', 'other']
+  },
+  bloodGroup: {
+    type: String,
+    enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+    uppercase: true,
+    trim: true,
+    default: null
+  },
+  weightKg: {
+    type: Number,
+    min: [0, 'Weight cannot be negative'],
+    max: [500, 'Weight seems unrealistic'],
+    default: null
+  },
+  bloodPressure: {
+    type: String,
+    trim: true,
+    default: null,
+    validate: {
+      validator: (value: string | null) => {
+        if (!value) return true;
+        return /^\d{2,3}\/\d{2,3}$/.test(value);
+      },
+      message: 'Blood pressure must be in the format S/D (e.g., 120/80)'
+    }
+  },
+  healthProfileUpdatedAt: {
+    type: Date,
+    default: null
   },
   isActive: {
     type: Boolean,

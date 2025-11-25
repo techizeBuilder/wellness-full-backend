@@ -39,6 +39,10 @@ export interface UpdateProfileData {
   profileImage?: string;
   dateOfBirth?: Date;
   gender?: 'male' | 'female' | 'other';
+  bloodGroup?: string | null;
+  weightKg?: number | null;
+  bloodPressure?: string | null;
+  healthProfileUpdatedAt?: Date | null;
   [key: string]: any;
 }
 

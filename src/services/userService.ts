@@ -16,6 +16,8 @@ class UserService implements IUserService {
 
   async updateProfile(userId: string, updateData: UpdateProfileData): Promise<IUser> {
     const { email, phone, ...otherData } = updateData;
+    const healthFields = ['bloodGroup', 'weightKg', 'bloodPressure'];
+    const didUpdateHealthField = healthFields.some((field) => field in otherData);
 
     // Check if email is being changed and if it already exists
     if (email) {
@@ -33,6 +35,10 @@ class UserService implements IUserService {
         throw new Error(phoneCheck.message);
       }
       otherData.phone = phone;
+    }
+
+    if (didUpdateHealthField) {
+      otherData.healthProfileUpdatedAt = new Date();
     }
 
     const updatedUser = await userRepository.updateById(userId, otherData);

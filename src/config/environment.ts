@@ -26,6 +26,7 @@ interface Environment {
   AGORA_APP_CERTIFICATE: string | undefined;
   AGORA_TOKEN_EXPIRY_SECONDS: number;
   AGORA_JOIN_WINDOW_MINUTES: number;
+  SESSION_REMINDER_MINUTES: number;
 }
 
 const ENV: Environment = {
@@ -70,7 +71,10 @@ const ENV: Environment = {
   AGORA_APP_ID: process.env.AGORA_APP_ID,
   AGORA_APP_CERTIFICATE: process.env.AGORA_APP_CERTIFICATE,
   AGORA_TOKEN_EXPIRY_SECONDS: parseInt(process.env.AGORA_TOKEN_EXPIRY_SECONDS || '7200', 10),
-  AGORA_JOIN_WINDOW_MINUTES: parseInt(process.env.AGORA_JOIN_WINDOW_MINUTES || '5', 10)
+  AGORA_JOIN_WINDOW_MINUTES: parseInt(process.env.AGORA_JOIN_WINDOW_MINUTES || '2', 10),
+
+  // Appointment reminders
+  SESSION_REMINDER_MINUTES: parseInt(process.env.SESSION_REMINDER_MINUTES || '10', 10)
 };
 
 export default ENV;

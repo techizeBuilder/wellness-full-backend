@@ -383,10 +383,105 @@ export const sendExpertApprovalEmail = async (email: string, firstName: string, 
   return await sendEmail({ email, subject, html });
 };
 
+interface SessionReminderEmailOptions {
+  email: string;
+  firstName: string;
+  counterpartyName: string;
+  startDateTime: Date;
+  consultationMethod: string;
+  leadMinutes: number;
+  joinWindowMinutes: number;
+}
+
+const formatSessionDateTime = (date: Date) => {
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(date);
+};
+
+const getConsultationMethodLabel = (method: string) => {
+  switch (method) {
+    case 'video':
+      return 'Video Call';
+    case 'audio':
+      return 'Audio Call';
+    case 'chat':
+      return 'Chat Session';
+    case 'in-person':
+      return 'In-person Session';
+    default:
+      return 'Session';
+  }
+};
+
+export const sendSessionReminderEmail = async ({
+  email,
+  firstName,
+  counterpartyName,
+  startDateTime,
+  consultationMethod,
+  leadMinutes,
+  joinWindowMinutes
+}: SessionReminderEmailOptions) => {
+  const formattedDate = formatSessionDateTime(startDateTime);
+  const methodLabel = getConsultationMethodLabel(consultationMethod);
+  const subject = `${methodLabel} starting in ${leadMinutes} minutes`;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Session Reminder</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #2196F3; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .details { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-top: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Upcoming Session Reminder</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${firstName},</p>
+          <p>This is a friendly reminder that your ${methodLabel.toLowerCase()} with ${counterpartyName} will begin in ${leadMinutes} minutes.</p>
+          <div class="details">
+            <p><strong>Session with:</strong> ${counterpartyName}</p>
+            <p><strong>Session type:</strong> ${methodLabel}</p>
+            <p><strong>Start time:</strong> ${formattedDate}</p>
+            <p><strong>Join window:</strong> You can join the session up to ${joinWindowMinutes} minutes before the start time.</p>
+          </div>
+          <p>Please ensure you're ready and have a stable connection if this is a virtual session.</p>
+          <p>If you can no longer attend, please update the session status inside the app.</p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} Wellness App. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `Hi ${firstName}, your ${methodLabel.toLowerCase()} with ${counterpartyName} starts in ${leadMinutes} minutes on ${formattedDate}. Please be ready to join within ${joinWindowMinutes} minutes of the start time.`;
+
+  return await sendEmail({ email, subject, html, text });
+};
+
 export default {
   sendEmail,
   sendOTPEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,
-  sendExpertApprovalEmail
+  sendExpertApprovalEmail,
+  sendSessionReminderEmail
 };
