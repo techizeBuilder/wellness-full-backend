@@ -1,10 +1,9 @@
 import { asyncHandler } from '../middlewares/errorHandler';
-import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import User from '../models/User';
 import Expert from '../models/Expert';
-import { getFileUrl } from '../middlewares/upload';
 import emailService from '../services/emailService';
 import logger from '../utils/logger';
+import { MESSAGES } from '../constants/messages';
 
 // @desc    Unified login for both users and experts
 // @route   POST /api/auth/unified-login
@@ -68,6 +67,44 @@ const unifiedLogin = asyncHandler(async (req, res) => {
 
   console.log(`Account found in ${accountType} table`);
 
+  // Helper to send OTP responses
+  const normalizedAccountType = userType === 'expert' ? 'Expert' : 'User';
+
+  const sendVerificationResponse = async (verificationType: 'email' | 'login', message: string) => {
+    try {
+      const otp = user.generateOTP();
+      await user.save();
+
+      const emailResult = await emailService.sendOTPEmail(email, otp, user.firstName, 'verification');
+      if (!emailResult.success) {
+        logger.error(`Failed to send ${verificationType} OTP email to ${email}:`, emailResult.error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to send verification OTP. Please try again later.'
+        });
+      }
+
+      logger.info(`OTP sent for ${verificationType} verification to ${email}`);
+      return res.status(200).json({
+        success: false,
+        requiresVerification: true,
+        verificationType,
+        message,
+        data: {
+          email,
+          userType,
+          accountType: normalizedAccountType
+        }
+      });
+    } catch (error: any) {
+      logger.error(`Error sending ${verificationType} OTP for login:`, error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification OTP. Please try again later.'
+      });
+    }
+  };
+
   // Check if account is locked (for experts)
   if (userType === 'expert' && user.isLocked) {
     console.log('Expert account is locked');
@@ -129,102 +166,16 @@ const unifiedLogin = asyncHandler(async (req, res) => {
     });
   }
 
-  // After successful password verification, always send OTP for login verification (only for users, not experts)
-  if (userType === 'user') {
-    console.log('Password verified for user, sending login OTP:', email);
-    
-    // Generate and send OTP for login verification
-    try {
-      const otp = user.generateOTP();
-      await user.save();
-      
-      // Send OTP email
-      const emailResult = await emailService.sendOTPEmail(email, otp, user.firstName, 'verification');
-      if (!emailResult.success) {
-        logger.error(`Failed to send OTP email to ${email}:`, emailResult.error);
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to send login OTP. Please try again later.'
-        });
-      }
-      
-      logger.info(`OTP sent for login verification to ${email}`);
-      return res.status(200).json({
-        success: false,
-        requiresVerification: true,
-        message: 'Please verify your login with the OTP sent to your email.',
-        data: {
-          email: email
-        }
-      });
-    } catch (error: any) {
-      logger.error(`Error sending OTP for login:`, error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send login OTP. Please try again later.'
-      });
-    }
+  // If email isn't verified, force verification before login
+  if (!user.isEmailVerified) {
+    console.log(`${accountType} email not verified. Triggering verification OTP.`);
+    return sendVerificationResponse('email', MESSAGES.AUTH.EMAIL_NOT_VERIFIED);
   }
 
-  // For experts, proceed with normal login (no OTP required)
-  console.log('Login successful for:', accountType);
+  // After successful password verification, always send OTP for login verification
+  console.log(`Password verified for ${accountType}, sending login OTP:`, email);
+  return sendVerificationResponse('login', 'Please verify your login with the OTP sent to your email.');
 
-  // Update last login
-  try {
-    user.lastLogin = new Date();
-    await user.save();
-  } catch (error) {
-    console.log('Error updating last login:', error.message);
-  }
-
-  // Generate tokens
-  const token = generateToken(user._id.toString(), userType);
-  const refreshToken = generateRefreshToken(user._id.toString(), userType);
-
-  // Remove password from response and add profile image URL if exists
-  user.password = undefined;
-  if (user.profileImage) {
-    user.profileImage = getFileUrl(user.profileImage, 'profiles');
-  }
-
-  console.log('Login completed successfully for:', accountType);
-  console.log('User data being sent:', {
-    id: user._id,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    phone: user.phone,
-    userType: userType,
-    accountType: accountType
-  });
-
-  res.status(200).json({
-    success: true,
-    message: `${accountType} login successful`,
-    data: {
-      user: {
-        id: user._id.toString(),
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        phone: user.phone,
-        userType: userType,
-        isEmailVerified: user.isEmailVerified,
-        profileImage: user.profileImage,
-        // Add additional fields for experts
-        ...(userType === 'expert' && {
-          specialization: user.specialization,
-          experience: user.experience,
-          rating: user.rating,
-          verificationStatus: user.verificationStatus
-        })
-      },
-      userType,
-      accountType,
-      token,
-      refreshToken
-    }
-  });
 });
 
 export {

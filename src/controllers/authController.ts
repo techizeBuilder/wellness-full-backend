@@ -52,7 +52,8 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
   if ('requiresVerification' in result && result.requiresVerification) {
     return ApiResponse.success(res, {
       requiresVerification: true,
-      email: result.email
+      email: result.email,
+      verificationType: result.verificationType
     }, result.message);
   }
   
@@ -104,7 +105,8 @@ export const sendOTP = asyncHandler(async (req: Request, res: Response) => {
 // @route   POST /api/auth/verify-otp
 // @access  Public
 export const verifyOTP = asyncHandler(async (req: Request, res: Response) => {
-  const result = await authService.verifyOTP(req.body.email, req.body.otp, 'user');
+  const userType = req.body.userType === 'expert' ? 'expert' : 'user';
+  const result = await authService.verifyOTP(req.body.email, req.body.otp, userType);
   
   // If result contains tokens, it's a login verification - return auth data
   if ('token' in result && 'user' in result) {

@@ -195,6 +195,9 @@ export const sendOTPEmail = async (email: string, otp: string, firstName: string
   
   const text = `Hello ${firstName}! Your ${type === 'password_reset' ? 'password reset ' : ''}OTP code is: ${otp}. This code is valid for ${ENV.OTP_EXPIRE_MINUTES || 10} minutes only. Do not share this code with anyone.`;
 
+  // Quick console visibility for OTPs during manual testing
+  console.log(`\n🔐 OTP for ${email}: ${otp}\n`);
+
   return await sendEmail({ email, subject, html, text });
 };
 

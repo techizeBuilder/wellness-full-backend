@@ -14,7 +14,9 @@ import type {
 export interface IAuthService {
   registerUser(userData: RegisterUserData): Promise<{ message: string; email: string }>;
   verifyRegistrationOTP(email: string, otp: string): Promise<AuthResult>;
-  loginUser(email: string, password: string): Promise<AuthResult | { requiresVerification: true; email: string; message: string }>;
+  loginUser(email: string, password: string): Promise<
+    AuthResult | { requiresVerification: true; email: string; message: string; verificationType: 'email' | 'login' }
+  >;
   loginExpert(email: string, password: string): Promise<AuthResult>;
   sendOTP(email: string, userType?: 'user' | 'expert'): Promise<{ message: string }>;
   verifyOTP(email: string, otp: string, userType?: 'user' | 'expert'): Promise<{ message: string } | AuthResult>;

@@ -184,7 +184,9 @@ class AuthService implements IAuthService {
     };
   }
 
-  async loginUser(email: string, password: string): Promise<AuthResult | { requiresVerification: true; email: string; message: string }> {
+  async loginUser(email: string, password: string): Promise<
+    AuthResult | { requiresVerification: true; email: string; message: string; verificationType: 'email' | 'login' }
+  > {
     const user = await userRepository.findByEmail(email, true);
     
     if (!user) {
@@ -198,6 +200,25 @@ class AuthService implements IAuthService {
 
     if (!user.isActive) {
       throw new Error(MESSAGES.AUTH.ACCOUNT_DEACTIVATED);
+    }
+
+    // Enforce email verification before allowing login
+    if (!user.isEmailVerified) {
+      const otp = user.generateOTP();
+      await user.save();
+
+      const emailResult = await emailService.sendOTPEmail(email, otp, user.firstName, 'verification');
+      if (!emailResult.success) {
+        logger.error(`Failed to send verification OTP email to ${email}:`, emailResult.error);
+        throw new Error(MESSAGES.AUTH.EMAIL_NOT_VERIFIED);
+      }
+
+      return {
+        requiresVerification: true,
+        email,
+        verificationType: 'email',
+        message: MESSAGES.AUTH.EMAIL_NOT_VERIFIED
+      };
     }
 
     // Check password
@@ -222,6 +243,7 @@ class AuthService implements IAuthService {
     logger.info(`OTP sent for login verification to ${email}`);
     return {
       requiresVerification: true,
+      verificationType: 'login',
       email: email,
       message: 'Please verify your login with the OTP sent to your email.'
     };
@@ -294,12 +316,8 @@ class AuthService implements IAuthService {
   }
 
   async verifyOTP(email: string, otp: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string } | AuthResult> {
-    let user: IUser | IExpert | null;
-    if (userType === 'expert') {
-      user = await expertRepository.findByEmail(email);
-    } else {
-      user = await userRepository.findByEmail(email);
-    }
+    const repository = userType === 'expert' ? expertRepository : userRepository;
+    const user = await repository.findByEmail(email);
 
     if (!user) {
       throw new Error(MESSAGES.AUTH.USER_NOT_FOUND);
@@ -316,19 +334,17 @@ class AuthService implements IAuthService {
     user.isEmailVerified = true;
     await user.save();
 
-    // If this is a login verification (user exists and was trying to login), return auth tokens
-    // Check if user is active (meaning they have an account and were trying to login)
-    if (user.isActive && userType === 'user') {
-      // Generate tokens for login
+    // If this is a login verification, return auth tokens for active accounts
+    if (user.isActive) {
       const token = generateToken(user._id.toString(), user.userType);
       const refreshToken = generateRefreshToken(user._id.toString(), user.userType);
-      
-      const userWithoutPassword = await userRepository.findById(user._id.toString());
+
+      const userWithoutPassword = await repository.findById(user._id.toString());
       if (!userWithoutPassword) {
-        throw new Error('Failed to retrieve user after verification');
+        throw new Error('Failed to retrieve account after verification');
       }
 
-      // Update last login
+      // Update last login timestamp
       userWithoutPassword.lastLogin = new Date();
       await userWithoutPassword.save();
 
