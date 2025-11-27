@@ -1051,10 +1051,13 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     });
   }
 
-  if (appointment.consultationMethod !== 'video') {
+  const isVideoCall = appointment.consultationMethod === 'video';
+  const isAudioCall = appointment.consultationMethod === 'audio';
+
+  if (!isVideoCall && !isAudioCall) {
     return res.status(400).json({
       success: false,
-      message: 'Video calling is only available for video consultation bookings'
+      message: 'Realtime calling is only available for audio or video consultation bookings'
     });
   }
 
@@ -1130,7 +1133,8 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
       token,
       uid,
       role: 'host',
-      expiresAt: privilegeExpiredTs * 1000
+      expiresAt: privilegeExpiredTs * 1000,
+      mediaType: isAudioCall ? 'audio' : 'video'
     }
   });
 });

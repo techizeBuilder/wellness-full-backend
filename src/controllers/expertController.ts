@@ -864,6 +864,12 @@ const getExpertById = asyncHandler(async (req, res) => {
     expertObj.profileImage = getFileUrl(expertObj.profileImage, 'profiles');
   }
 
+  // Attach structured availability from ExpertAvailability collection
+  const availabilityDoc = await ExpertAvailability.findOne({ expert: expert._id }).lean();
+  if (availabilityDoc?.availability) {
+    expertObj.availability = availabilityDoc.availability;
+  }
+
   const feedbackDocs = await Appointment.find({
     expert: expert._id,
     feedbackRating: { $exists: true, $ne: null }
