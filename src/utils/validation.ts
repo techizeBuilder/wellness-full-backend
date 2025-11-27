@@ -214,7 +214,15 @@ export const updateProfileSchema = Joi.object({
   lastName: Joi.string().trim().min(2).max(50).optional(),
   phone: Joi.string().pattern(/^[+]?[\d\s\-\(\)]{10,}$/).optional().messages({ 'string.pattern.base': 'Please enter a valid phone number' }),
   dateOfBirth: Joi.date().max('now').optional(),
-  gender: Joi.string().valid('male', 'female', 'other').optional()
+  gender: Joi.string().valid('male', 'female', 'other').optional(),
+  bloodGroup: Joi.string().valid('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-').uppercase().trim().allow(null).optional(),
+  weightKg: Joi.number().min(0).max(500).allow(null).optional().messages({ 
+    'number.min': 'Weight cannot be negative',
+    'number.max': 'Weight seems unrealistic'
+  }),
+  bloodPressure: Joi.string().pattern(/^\d{2,3}\/\d{2,3}$/).trim().allow(null).optional().messages({
+    'string.pattern.base': 'Blood pressure must be in the format S/D (e.g., 120/80)'
+  })
 });
 
 export const updateExpertProfileSchema = Joi.object({
