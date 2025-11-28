@@ -9,6 +9,27 @@ interface SendEmailOptions {
   text?: string;
 }
 
+const escapeHtml = (value: string) => {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const formatCurrencyInInr = (amount?: number) => {
+  if (typeof amount !== 'number' || Number.isNaN(amount)) {
+    return null;
+  }
+
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 2
+  }).format(amount);
+};
+
 // Create reusable transporter object using SMTP with connection pooling
 const createTransporter = () => {
   const transporter = nodemailer.createTransport({
@@ -419,6 +440,235 @@ const getConsultationMethodLabel = (method: string) => {
   }
 };
 
+interface BookingConfirmationEmailOptions {
+  email: string;
+  participantName: string;
+  counterpartyName: string;
+  role: 'user' | 'expert';
+  sessionDateTime: Date;
+  duration: number;
+  consultationMethod: string;
+  sessionType: string;
+  planName?: string;
+  planSessionNumber?: number;
+  planTotalSessions?: number;
+  price?: number;
+  notes?: string;
+}
+
+export const sendBookingConfirmationEmail = async ({
+  email,
+  participantName,
+  counterpartyName,
+  role,
+  sessionDateTime,
+  duration,
+  consultationMethod,
+  sessionType,
+  planName,
+  planSessionNumber,
+  planTotalSessions,
+  price,
+  notes
+}: BookingConfirmationEmailOptions) => {
+  const formattedDate = formatSessionDateTime(sessionDateTime);
+  const methodLabel = getConsultationMethodLabel(consultationMethod);
+  const displayParticipantName = participantName || 'there';
+  const planDetail =
+    planName
+      ? `<p><strong>Plan:</strong> ${planName}${planSessionNumber && planTotalSessions ? ` (Session ${planSessionNumber} of ${planTotalSessions})` : ''}</p>`
+      : '';
+  const priceDetail = typeof price === 'number' ? formatCurrencyInInr(price) : null;
+  const notesLabel = role === 'expert' ? 'Client notes' : 'Notes you shared';
+  const formattedNotes = notes
+    ? `<div class="notes">
+        <p><strong>${notesLabel}:</strong></p>
+        <p>${escapeHtml(notes).replace(/\n/g, '<br/>')}</p>
+      </div>`
+    : '';
+  const priceMarkup = priceDetail
+    ? `<p><strong>Price:</strong> ${priceDetail}</p>`
+    : '';
+  const roleCopy =
+    role === 'user'
+      ? `Your ${methodLabel.toLowerCase()} with ${counterpartyName} is booked. We'll notify you once the expert confirms the session.`
+      : `${counterpartyName} just booked a ${methodLabel.toLowerCase()} with you. Please review and confirm the session in your dashboard.`;
+
+  const ctaUrl =
+    role === 'user'
+      ? `${ENV.FRONTEND_URL}/sessions`
+      : `${ENV.FRONTEND_URL}/expert/bookings`;
+  const ctaLabel = role === 'user' ? 'View my sessions' : 'View booking';
+
+  const subject =
+    role === 'user'
+      ? `You're booked with ${counterpartyName}`
+      : `New ${methodLabel.toLowerCase()} booked by ${counterpartyName}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Booking Confirmation</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #673ab7; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .details { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-top: 20px; }
+        .notes { background-color: #fff; border: 1px solid #d1c4e9; border-radius: 8px; padding: 15px; margin-top: 20px; }
+        .button { display: inline-block; background-color: #673ab7; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Booking Confirmed</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${displayParticipantName},</p>
+          <p>${roleCopy}</p>
+          <div class="details">
+            <p><strong>Session with:</strong> ${counterpartyName}</p>
+            <p><strong>Consultation method:</strong> ${methodLabel}</p>
+            <p><strong>Session type:</strong> ${sessionType}</p>
+            <p><strong>Date & time:</strong> ${formattedDate}</p>
+            <p><strong>Duration:</strong> ${duration} minutes</p>
+            ${planDetail}
+            ${priceMarkup}
+          </div>
+          ${formattedNotes}
+          <div style="text-align: center;">
+            <a href="${ctaUrl}" class="button">${ctaLabel}</a>
+          </div>
+          <p>If you need to make changes, please do so from the app as soon as possible.</p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} Wellness App. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const plainTextLines = [
+    `Hi ${displayParticipantName},`,
+    roleCopy,
+    `Session with: ${counterpartyName}`,
+    `Consultation method: ${methodLabel}`,
+    `Session type: ${sessionType}`,
+    `Date & time: ${formattedDate}`,
+    `Duration: ${duration} minutes`,
+    planName ? `Plan: ${planName}${planSessionNumber && planTotalSessions ? ` (Session ${planSessionNumber} of ${planTotalSessions})` : ''}` : '',
+    priceDetail ? `Price: ${priceDetail}` : '',
+    notes ? `${notesLabel}: ${notes}` : '',
+    `Manage booking: ${ctaUrl}`
+  ].filter(Boolean);
+
+  const text = plainTextLines.join('\n');
+
+  return await sendEmail({ email, subject, html, text });
+};
+
+interface BookingStatusUpdateEmailOptions {
+  email: string;
+  firstName?: string;
+  counterpartyName: string;
+  status: 'confirmed' | 'cancelled' | 'completed' | 'pending' | 'rejected';
+  sessionDateTime: Date;
+  consultationMethod: string;
+  sessionType: string;
+  planName?: string;
+}
+
+export const sendBookingStatusUpdateEmail = async ({
+  email,
+  firstName,
+  counterpartyName,
+  status,
+  sessionDateTime,
+  consultationMethod,
+  sessionType,
+  planName
+}: BookingStatusUpdateEmailOptions) => {
+  const formattedDate = formatSessionDateTime(sessionDateTime);
+  const methodLabel = getConsultationMethodLabel(consultationMethod);
+  const displayName = firstName || 'there';
+  const statusTitle = status.charAt(0).toUpperCase() + status.slice(1);
+  const statusCopy =
+    status === 'confirmed'
+      ? `Your ${methodLabel.toLowerCase()} with ${counterpartyName} is confirmed.`
+      : `Your session is now marked as ${status}.`;
+  const ctaUrl = `${ENV.FRONTEND_URL}/sessions`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Booking ${statusTitle}</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #2e7d32; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .details { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-top: 20px; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .button { display: inline-block; background-color: #2e7d32; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Booking ${statusTitle}</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${displayName},</p>
+          <p>${statusCopy}</p>
+          <div class="details">
+            <p><strong>Session with:</strong> ${counterpartyName}</p>
+            <p><strong>Consultation method:</strong> ${methodLabel}</p>
+            <p><strong>Session type:</strong> ${sessionType}</p>
+            <p><strong>Date & time:</strong> ${formattedDate}</p>
+            ${planName ? `<p><strong>Plan:</strong> ${planName}</p>` : ''}
+          </div>
+          <div style="text-align: center;">
+            <a href="${ctaUrl}" class="button">View booking</a>
+          </div>
+          <p>If you need to make changes, open the app to manage your session.</p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} Wellness App. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = [
+    `Hi ${displayName},`,
+    statusCopy,
+    `Session with: ${counterpartyName}`,
+    `Consultation method: ${methodLabel}`,
+    `Session type: ${sessionType}`,
+    `Date & time: ${formattedDate}`,
+    planName ? `Plan: ${planName}` : '',
+    `View booking: ${ctaUrl}`
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const subject = status === 'confirmed'
+    ? `Your session on ${formattedDate} is confirmed`
+    : `Booking updated: ${statusTitle}`;
+
+  return await sendEmail({ email, subject, html, text });
+};
+
 export const sendSessionReminderEmail = async ({
   email,
   firstName,
@@ -483,5 +733,7 @@ export default {
   sendPasswordResetEmail,
   sendWelcomeEmail,
   sendExpertApprovalEmail,
-  sendSessionReminderEmail
+  sendSessionReminderEmail,
+  sendBookingConfirmationEmail,
+  sendBookingStatusUpdateEmail
 };

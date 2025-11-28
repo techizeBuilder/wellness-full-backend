@@ -8,7 +8,8 @@ import {
   rescheduleBooking,
   getAgoraToken,
   submitFeedback,
-  uploadPrescription
+  uploadPrescription,
+  getUserDetailsForExpert
 } from '../controllers/bookingController';
 import { protect } from '../middlewares/auth';
 import { uploadPrescription as uploadPrescriptionMiddleware, handleUploadError } from '../middlewares/upload';
@@ -24,6 +25,9 @@ router.get('/user', protect, getUserBookings);
 
 // Protected routes - Expert bookings
 router.get('/expert', protect, getExpertBookings);
+
+// Protected route - Get user details for expert (patient information)
+router.get('/user/:userId/details', protect, getUserDetailsForExpert);
 
 // Protected route - Update booking status
 router.patch('/:id/status', protect, updateBookingStatus);

@@ -8,6 +8,19 @@ import ExpertAvailability from '../models/ExpertAvailability';
 import User from '../models/User';
 import Plan from '../models/Plan';
 import { deleteFile, getFilePath, getFileUrl } from '../middlewares/upload';
+import logger from '../utils/logger';
+import { sendBookingConfirmationEmail, sendBookingStatusUpdateEmail } from '../services/emailService';
+
+type ParticipantDetails = {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+};
+
+type PopulatedAppointment = IAppointment & {
+  user: ParticipantDetails;
+  expert: ParticipantDetails;
+};
 
 const getSessionDateTimes = (appointment: IAppointment) => {
   const sessionDate = new Date(appointment.sessionDate);
@@ -21,6 +34,107 @@ const getSessionDateTimes = (appointment: IAppointment) => {
   endDateTime.setHours(endHour, endMin, 0, 0);
 
   return { startDateTime, endDateTime };
+};
+
+const buildDisplayName = (doc?: ParticipantDetails, fallback: string = 'Wellness Member') => {
+  if (!doc) {
+    return fallback;
+  }
+
+  const parts = [doc.firstName, doc.lastName].filter(Boolean);
+  if (parts.length === 0) {
+    return fallback;
+  }
+
+  return parts.join(' ');
+};
+
+const notifyParticipantsOfBooking = async (appointment: PopulatedAppointment) => {
+  try {
+    const { startDateTime } = getSessionDateTimes(appointment);
+    const tasks: Array<{ label: 'user' | 'expert'; promise: Promise<unknown> }> = [];
+
+    if (appointment.user?.email) {
+      tasks.push({
+        label: 'user',
+        promise: sendBookingConfirmationEmail({
+          email: appointment.user.email,
+          participantName: appointment.user.firstName || buildDisplayName(appointment.user, 'there'),
+          counterpartyName: buildDisplayName(appointment.expert, 'Your expert'),
+          role: 'user',
+          sessionDateTime: startDateTime,
+          duration: appointment.duration,
+          consultationMethod: appointment.consultationMethod,
+          sessionType: appointment.sessionType,
+          planName: appointment.planName,
+          planSessionNumber: appointment.planSessionNumber,
+          planTotalSessions: appointment.planTotalSessions,
+          price: appointment.price,
+          notes: appointment.notes
+        })
+      });
+    }
+
+    if (appointment.expert?.email) {
+      tasks.push({
+        label: 'expert',
+        promise: sendBookingConfirmationEmail({
+          email: appointment.expert.email,
+          participantName: appointment.expert.firstName || buildDisplayName(appointment.expert, 'there'),
+          counterpartyName: buildDisplayName(appointment.user, 'Your client'),
+          role: 'expert',
+          sessionDateTime: startDateTime,
+          duration: appointment.duration,
+          consultationMethod: appointment.consultationMethod,
+          sessionType: appointment.sessionType,
+          planName: appointment.planName,
+          planSessionNumber: appointment.planSessionNumber,
+          planTotalSessions: appointment.planTotalSessions,
+          price: appointment.price,
+          notes: appointment.notes
+        })
+      });
+    }
+
+    if (!tasks.length) {
+      return;
+    }
+
+    const results = await Promise.allSettled(tasks.map(task => task.promise));
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        logger.error(
+          `Failed to send booking confirmation email to ${tasks[index].label} for appointment ${appointment._id}`,
+          result.reason
+        );
+      }
+    });
+  } catch (error) {
+    logger.error(`Error while sending booking confirmation emails for appointment ${appointment._id}`, error);
+  }
+};
+
+const notifyCustomerOfStatusChange = async (appointment: PopulatedAppointment, status: 'confirmed' | 'cancelled' | 'completed' | 'pending' | 'rejected') => {
+  try {
+    if (!appointment.user?.email) {
+      return;
+    }
+
+    const { startDateTime } = getSessionDateTimes(appointment);
+
+    await sendBookingStatusUpdateEmail({
+      email: appointment.user.email,
+      firstName: appointment.user.firstName || buildDisplayName(appointment.user, 'there'),
+      counterpartyName: buildDisplayName(appointment.expert, 'Your expert'),
+      status,
+      sessionDateTime: startDateTime,
+      consultationMethod: appointment.consultationMethod,
+      sessionType: appointment.sessionType,
+      planName: appointment.planName || undefined
+    });
+  } catch (error) {
+    logger.error(`Failed to send booking status email (${status}) for appointment ${appointment._id}`, error);
+  }
 };
 
 const deriveAgoraUid = (id: string) => {
@@ -470,7 +584,8 @@ export const createBooking = asyncHandler(async (req, res) => {
       });
 
       await appointment.populate('user', 'firstName lastName email');
-      await appointment.populate('expert', 'firstName lastName specialization profileImage');
+      await appointment.populate('expert', 'firstName lastName specialization profileImage email');
+      await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
 
       return res.status(201).json({
         success: true,
@@ -563,7 +678,8 @@ export const createBooking = asyncHandler(async (req, res) => {
     await Promise.all(
       createdAppointments.map(async appointment => {
         await appointment.populate('user', 'firstName lastName email');
-        await appointment.populate('expert', 'firstName lastName specialization profileImage');
+        await appointment.populate('expert', 'firstName lastName specialization profileImage email');
+        await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
       })
     );
 
@@ -619,7 +735,8 @@ export const createBooking = asyncHandler(async (req, res) => {
 
   // Populate user and expert details
   await appointment.populate('user', 'firstName lastName email');
-  await appointment.populate('expert', 'firstName lastName specialization profileImage');
+  await appointment.populate('expert', 'firstName lastName specialization profileImage email');
+  await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
 
   res.status(201).json({
     success: true,
@@ -809,6 +926,10 @@ export const updateBookingStatus = asyncHandler(async (req, res) => {
   // Populate for response
   await appointment.populate('user', 'firstName lastName email');
   await appointment.populate('expert', 'firstName lastName specialization profileImage');
+
+  if (status === 'confirmed' && (isUser || isExpert)) {
+    await notifyCustomerOfStatusChange(appointment as PopulatedAppointment, 'confirmed');
+  }
 
   res.status(200).json({
     success: true,
@@ -1326,6 +1447,64 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
       prescription: appointment.prescription
     },
     message: 'Prescription uploaded successfully'
+  });
+});
+
+// @desc    Get user details by ID (for experts viewing their patients)
+// @route   GET /api/bookings/user/:userId/details
+// @access  Private (Expert)
+export const getUserDetailsForExpert = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+  const { userId } = req.params;
+
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  // Verify that the current user is an expert
+  const expertId = currentUser._id.toString();
+  const expert = await Expert.findById(expertId).select('_id');
+  
+  if (!expert) {
+    return res.status(403).json({
+      success: false,
+      message: 'Only experts can access patient details'
+    });
+  }
+
+  // Verify that this user has an appointment with the expert
+  const hasAppointment = await Appointment.findOne({
+    expert: expertId,
+    user: userId
+  });
+
+  if (!hasAppointment) {
+    return res.status(403).json({
+      success: false,
+      message: 'You can only view details of users who have appointments with you'
+    });
+  }
+
+  // Fetch user details including health information
+  const user = await User.findById(userId).select(
+    '-password -resetPasswordToken -resetPasswordExpire -otpCode -otpExpire -loginAttempts -lockUntil'
+  );
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found'
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: {
+      user: user.toObject()
+    }
   });
 });
 
