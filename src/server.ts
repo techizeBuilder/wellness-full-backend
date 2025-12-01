@@ -23,15 +23,19 @@ import authRoutes from './routes/authRoutes';
 import expertRoutes from './routes/expertRoutes';
 import bookingRoutes from './routes/bookingRoutes';
 import planRoutes from './routes/planRoutes';
+import subscriptionRoutes from './routes/subscriptionRoutes';
+import paymentRoutes from './routes/paymentRoutes';
 import adminRoutes from './routes/admin/adminRoutes';
 import userRoutes from './routes/admin/userRoutes';
 import adminExpertRoutes from './routes/admin/expertRoutes';
-import subscriptionRoutes from './routes/admin/subscriptionRoutes';
+import adminSubscriptionRoutes from './routes/admin/subscriptionRoutes';
 import adminBookingRoutes from './routes/admin/bookingRoutes';
 
 // Import seeders
 import { runSeeders } from './seeders';
 import { startAppointmentReminderScheduler } from './services/appointmentReminderService';
+import { startSubscriptionReminderScheduler } from './services/subscriptionReminderService';
+import { startSubscriptionExpiryScheduler } from './services/subscriptionExpiryService';
 
 // Validate environment variables
 validateEnvironment();
@@ -111,10 +115,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/experts', expertRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/plans', planRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/users', userRoutes);
 app.use('/api/admin/experts', adminExpertRoutes);
-app.use('/api/admin/subscriptions', subscriptionRoutes);
+app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin/bookings', adminBookingRoutes);
 
 // Default route
@@ -148,6 +154,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 });
 
 startAppointmentReminderScheduler();
+startSubscriptionReminderScheduler();
+startSubscriptionExpiryScheduler();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err: Error, promise: Promise<any>) => {

@@ -727,6 +727,108 @@ export const sendSessionReminderEmail = async ({
   return await sendEmail({ email, subject, html, text });
 };
 
+interface SubscriptionRenewalReminderEmailOptions {
+  email: string;
+  firstName: string;
+  planName: string;
+  expertName: string;
+  expiryDate: Date;
+  nextBillingDate: Date;
+  sessionsRemaining: number;
+  monthlyPrice?: number;
+  autoRenewal: boolean;
+}
+
+export const sendSubscriptionRenewalReminderEmail = async ({
+  email,
+  firstName,
+  planName,
+  expertName,
+  expiryDate,
+  nextBillingDate,
+  sessionsRemaining,
+  monthlyPrice,
+  autoRenewal
+}: SubscriptionRenewalReminderEmailOptions) => {
+  const formattedExpiryDate = expiryDate.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  const formattedBillingDate = nextBillingDate.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+  const priceDetail = monthlyPrice ? formatCurrencyInInr(monthlyPrice) : 'N/A';
+
+  const subject = `Your ${planName} subscription expires in 3 days`;
+  
+  const autoRenewalText = autoRenewal
+    ? `<p><strong>Auto-renewal:</strong> Your subscription will automatically renew on ${formattedBillingDate} and you'll be charged ${priceDetail}.</p>`
+    : `<p><strong>Auto-renewal:</strong> Disabled. Your subscription will expire on ${formattedExpiryDate}.</p>`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Subscription Renewal Reminder</title>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #F59E0B; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 14px; }
+        .details { background-color: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-top: 20px; }
+        .button { display: inline-block; background-color: #2DD4BF; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .warning { background-color: #FFF3CD; border-left: 4px solid #F59E0B; padding: 15px; margin: 20px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>Subscription Renewal Reminder</h1>
+        </div>
+        <div class="content">
+          <p>Hi ${firstName},</p>
+          <p>This is a friendly reminder that your subscription <strong>"${planName}"</strong> with ${expertName} will expire in <strong>3 days</strong>.</p>
+          
+          <div class="warning">
+            <p><strong>⚠️ Action Required:</strong> Your subscription expires on ${formattedExpiryDate}</p>
+          </div>
+
+          <div class="details">
+            <p><strong>Plan:</strong> ${planName}</p>
+            <p><strong>Expert:</strong> ${expertName}</p>
+            <p><strong>Expiry Date:</strong> ${formattedExpiryDate}</p>
+            <p><strong>Sessions Remaining:</strong> ${sessionsRemaining}</p>
+            <p><strong>Monthly Price:</strong> ${priceDetail}</p>
+            ${autoRenewalText}
+          </div>
+
+          <p>If you'd like to continue your subscription, ${autoRenewal ? 'it will automatically renew' : 'please renew it manually'} before the expiry date.</p>
+          
+          <div style="text-align: center;">
+            <a href="${ENV.FRONTEND_URL}/subscription-details" class="button">Manage Subscription</a>
+          </div>
+          
+          <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+        </div>
+        <div class="footer">
+          <p>&copy; ${new Date().getFullYear()} Wellness App. All rights reserved.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  const text = `Hi ${firstName}, your subscription "${planName}" with ${expertName} expires in 3 days (${formattedExpiryDate}). You have ${sessionsRemaining} sessions remaining. ${autoRenewal ? `Auto-renewal is enabled. Your subscription will renew on ${formattedBillingDate} for ${priceDetail}.` : 'Auto-renewal is disabled. Please renew manually to continue.'} Manage your subscription: ${ENV.FRONTEND_URL}/subscription-details`;
+
+  return await sendEmail({ email, subject, html, text });
+};
+
 export default {
   sendEmail,
   sendOTPEmail,
@@ -735,5 +837,6 @@ export default {
   sendExpertApprovalEmail,
   sendSessionReminderEmail,
   sendBookingConfirmationEmail,
-  sendBookingStatusUpdateEmail
+  sendBookingStatusUpdateEmail,
+  sendSubscriptionRenewalReminderEmail
 };

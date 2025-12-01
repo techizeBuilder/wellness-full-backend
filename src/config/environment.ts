@@ -27,6 +27,11 @@ interface Environment {
   AGORA_TOKEN_EXPIRY_SECONDS: number;
   AGORA_JOIN_WINDOW_MINUTES: number;
   SESSION_REMINDER_MINUTES: number;
+  
+  // Razorpay
+  RAZORPAY_KEY_ID?: string;
+  RAZORPAY_KEY_SECRET?: string;
+  RAZORPAY_WEBHOOK_SECRET?: string;
 }
 
 const ENV: Environment = {
@@ -74,7 +79,12 @@ const ENV: Environment = {
   AGORA_JOIN_WINDOW_MINUTES: parseInt(process.env.AGORA_JOIN_WINDOW_MINUTES || '2', 10),
 
   // Appointment reminders
-  SESSION_REMINDER_MINUTES: parseInt(process.env.SESSION_REMINDER_MINUTES || '10', 10)
+  SESSION_REMINDER_MINUTES: parseInt(process.env.SESSION_REMINDER_MINUTES || '10', 10),
+  
+  // Razorpay
+  RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
+  RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
+  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET
 };
 
 export default ENV;

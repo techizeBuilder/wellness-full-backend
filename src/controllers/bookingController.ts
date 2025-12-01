@@ -49,7 +49,7 @@ const buildDisplayName = (doc?: ParticipantDetails, fallback: string = 'Wellness
   return parts.join(' ');
 };
 
-const notifyParticipantsOfBooking = async (appointment: PopulatedAppointment) => {
+export const notifyParticipantsOfBooking = async (appointment: PopulatedAppointment) => {
   try {
     const { startDateTime } = getSessionDateTimes(appointment);
     const tasks: Array<{ label: 'user' | 'expert'; promise: Promise<unknown> }> = [];
@@ -574,6 +574,7 @@ export const createBooking = asyncHandler(async (req, res) => {
         price,
         notes: notes || undefined,
         status: 'pending',
+        paymentStatus: price > 0 ? 'pending' : undefined, // Set payment status if payment is required
         planId: plan._id,
         planType: resolvedPlanType,
         planInstanceId,
@@ -585,7 +586,12 @@ export const createBooking = asyncHandler(async (req, res) => {
 
       await appointment.populate('user', 'firstName lastName email');
       await appointment.populate('expert', 'firstName lastName specialization profileImage email');
-      await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
+      
+      // Only send emails if payment is not required (price is 0 or free)
+      // For paid bookings, emails will be sent after payment is verified
+      if (price <= 0) {
+        await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
+      }
 
       return res.status(201).json({
         success: true,
@@ -663,6 +669,7 @@ export const createBooking = asyncHandler(async (req, res) => {
         price: perSessionPrice,
         notes: notes || undefined,
         status: 'pending',
+        paymentStatus: perSessionPrice > 0 ? 'pending' : undefined, // Set payment status if payment is required
         planId: plan._id,
         planType: resolvedPlanType,
         planInstanceId,
@@ -675,13 +682,51 @@ export const createBooking = asyncHandler(async (req, res) => {
       createdAppointments.push(appointment);
     }
 
-    await Promise.all(
-      createdAppointments.map(async appointment => {
-        await appointment.populate('user', 'firstName lastName email');
-        await appointment.populate('expert', 'firstName lastName specialization profileImage email');
-        await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
-      })
-    );
+    // Only send emails if payment is not required (price is 0 or free)
+    // For paid bookings, emails will be sent after payment is verified
+    const totalPrice = plan.monthlyPrice || 0;
+    if (totalPrice <= 0) {
+      await Promise.all(
+        createdAppointments.map(async appointment => {
+          await appointment.populate('user', 'firstName lastName email');
+          await appointment.populate('expert', 'firstName lastName specialization profileImage email');
+          await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
+        })
+      );
+    } else {
+      // Just populate for later use, but don't send emails yet
+      await Promise.all(
+        createdAppointments.map(async appointment => {
+          await appointment.populate('user', 'firstName lastName email');
+          await appointment.populate('expert', 'firstName lastName specialization profileImage email');
+        })
+      );
+    }
+
+    // Create UserSubscription record for monthly plans
+    const UserSubscription = (await import('../models/UserSubscription')).default;
+    const startDate = new Date();
+    const expiryDate = new Date();
+    expiryDate.setMonth(expiryDate.getMonth() + 1); // 1 month from now
+    const nextBillingDate = new Date(expiryDate);
+
+    await UserSubscription.create({
+      user: currentUser._id,
+      expert: expertId,
+      plan: plan._id,
+      planInstanceId,
+      planName: plan.name,
+      planType: 'monthly',
+      startDate,
+      expiryDate,
+      nextBillingDate,
+      totalSessions: plan.classesPerMonth,
+      sessionsUsed: 0,
+      sessionsRemaining: plan.classesPerMonth,
+      monthlyPrice: plan.monthlyPrice,
+      status: 'active',
+      autoRenewal: true
+    });
 
     return res.status(201).json({
       success: true,
@@ -730,13 +775,19 @@ export const createBooking = asyncHandler(async (req, res) => {
     sessionType,
     price,
     notes: notes || undefined,
-    status: 'pending'
+    status: 'pending',
+    paymentStatus: price > 0 ? 'pending' : undefined // Set payment status if payment is required
   });
 
   // Populate user and expert details
   await appointment.populate('user', 'firstName lastName email');
   await appointment.populate('expert', 'firstName lastName specialization profileImage email');
-  await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
+  
+  // Only send emails if payment is not required (price is 0 or free)
+  // For paid bookings, emails will be sent after payment is verified
+  if (price <= 0) {
+    await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
+  }
 
   res.status(201).json({
     success: true,

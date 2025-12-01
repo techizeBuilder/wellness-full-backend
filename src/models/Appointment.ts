@@ -18,6 +18,7 @@ export interface IAppointment extends Document {
   planSessionNumber?: number;
   planTotalSessions?: number;
   planPrice?: number;
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded';
   notes?: string;
   meetingLink?: string;
   cancelledBy?: 'user' | 'expert';
@@ -119,6 +120,12 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
   planPrice: {
     type: Number,
     min: [0, 'Plan price cannot be negative']
+  },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded'],
+    default: 'pending',
+    index: true
   },
   notes: {
     type: String,
