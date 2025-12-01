@@ -11,6 +11,7 @@ import {
   uploadPrescription,
   getUserDetailsForExpert
 } from '../controllers/bookingController';
+import { createGroupSessionForPlan } from '../controllers/groupSessionController';
 import { protect } from '../middlewares/auth';
 import { uploadPrescription as uploadPrescriptionMiddleware, handleUploadError } from '../middlewares/upload';
 
@@ -25,6 +26,7 @@ router.get('/user', protect, getUserBookings);
 
 // Protected routes - Expert bookings
 router.get('/expert', protect, getExpertBookings);
+router.post('/expert/group-session', protect, createGroupSessionForPlan);
 
 // Protected route - Get user details for expert (patient information)
 router.get('/user/:userId/details', protect, getUserDetailsForExpert);
