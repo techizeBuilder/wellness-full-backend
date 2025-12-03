@@ -117,7 +117,9 @@ export const createPlan = asyncHandler(async (req, res) => {
     price,
     duration,
     classesPerMonth,
-    monthlyPrice
+    monthlyPrice,
+    scheduledDate,
+    scheduledTime
   } = req.body;
 
   // Validation
@@ -134,6 +136,21 @@ export const createPlan = asyncHandler(async (req, res) => {
         success: false,
         message: 'Session format is required for single class plans'
       });
+    }
+    // For group sessions, date and time are required
+    if (sessionFormat === 'one-to-many') {
+      if (!scheduledDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Scheduled date is required for group sessions'
+        });
+      }
+      if (!scheduledTime) {
+        return res.status(400).json({
+          success: false,
+          message: 'Scheduled time is required for group sessions'
+        });
+      }
     }
   }
 
@@ -166,6 +183,11 @@ export const createPlan = asyncHandler(async (req, res) => {
   if (type === 'single') {
     if (sessionClassType) planData.sessionClassType = sessionClassType;
     planData.sessionFormat = sessionFormat;
+    // For group sessions, add scheduled date and time
+    if (sessionFormat === 'one-to-many') {
+      planData.scheduledDate = new Date(scheduledDate);
+      planData.scheduledTime = scheduledTime;
+    }
   }
 
   if (type === 'monthly') {
@@ -224,7 +246,9 @@ export const updatePlan = asyncHandler(async (req, res) => {
     duration,
     classesPerMonth,
     monthlyPrice,
-    isActive
+    isActive,
+    scheduledDate,
+    scheduledTime
   } = req.body;
 
   if (name) plan.name = name;
@@ -234,6 +258,12 @@ export const updatePlan = asyncHandler(async (req, res) => {
   if (price !== undefined) plan.price = price;
   if (duration !== undefined) plan.duration = duration;
   if (isActive !== undefined) plan.isActive = isActive;
+
+  // For group sessions, update scheduled date and time
+  if (plan.type === 'single' && (sessionFormat === 'one-to-many' || plan.sessionFormat === 'one-to-many')) {
+    if (scheduledDate !== undefined) plan.scheduledDate = new Date(scheduledDate);
+    if (scheduledTime !== undefined) plan.scheduledTime = scheduledTime;
+  }
 
   if (plan.type === 'monthly') {
     if (classesPerMonth !== undefined) plan.classesPerMonth = classesPerMonth;

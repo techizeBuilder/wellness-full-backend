@@ -10,6 +10,9 @@ export interface IPlan extends Document {
   sessionFormat?: 'one-on-one' | 'one-to-many';
   price: number;
   duration?: number; // in minutes
+  // For group sessions (one-to-many) - scheduled date and time
+  scheduledDate?: Date; // When the group session is scheduled
+  scheduledTime?: string; // HH:MM format
   
   // For monthly subscription
   classesPerMonth?: number;
@@ -63,6 +66,14 @@ const planSchema = new mongoose.Schema<IPlan, PlanModel>({
     min: [15, 'Duration must be at least 15 minutes'],
     max: [480, 'Duration cannot exceed 8 hours']
   },
+  // For group sessions - scheduled date and time
+  scheduledDate: {
+    type: Date
+  },
+  scheduledTime: {
+    type: String,
+    match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format. Use HH:MM format']
+  },
   // For monthly subscription
   classesPerMonth: {
     type: Number,
@@ -98,6 +109,15 @@ planSchema.pre('save', function(next) {
   if (this.type === 'single') {
     if (!this.sessionFormat) {
       return next(new Error('Single class plans must specify sessionFormat'));
+    }
+    // For group sessions, scheduled date and time are required
+    if (this.sessionFormat === 'one-to-many') {
+      if (!this.scheduledDate) {
+        return next(new Error('Group sessions must specify scheduledDate'));
+      }
+      if (!this.scheduledTime) {
+        return next(new Error('Group sessions must specify scheduledTime'));
+      }
     }
   }
   next();
