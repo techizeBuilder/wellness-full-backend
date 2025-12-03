@@ -11,14 +11,37 @@ const getExpertStats = asyncHandler(async (req, res) => {
     const inactiveExperts = await Expert.countDocuments({ isActive: false });
     const verifiedExperts = await Expert.countDocuments({ isVerified: true });
     
+    // Calculate average rating across all experts
+    const ratingStats = await Expert.aggregate([
+      {
+        $match: {
+          'rating.count': { $gt: 0 } // Only experts with ratings
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRating: { $sum: { $multiply: ['$rating.average', '$rating.count'] } },
+          totalCount: { $sum: '$rating.count' },
+          expertCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    let averageRating = 0;
+    if (ratingStats.length > 0 && ratingStats[0].totalCount > 0) {
+      averageRating = ratingStats[0].totalRating / ratingStats[0].totalCount;
+    }
+    
     res.status(200).json({
       success: true,
       data: {
         stats: {
-          total: totalExperts,
-          active: activeExperts,
-          inactive: inactiveExperts,
-          verified: verifiedExperts
+          totalExperts: totalExperts,
+          activeExperts: activeExperts,
+          inactiveExperts: inactiveExperts,
+          verifiedExperts: verifiedExperts,
+          averageRating: Math.round(averageRating * 10) / 10 // Round to 1 decimal place
         }
       }
     });

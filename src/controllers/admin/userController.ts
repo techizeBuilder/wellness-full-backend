@@ -5,19 +5,26 @@ import { checkEmailExists, checkPhoneExists } from '../../utils/emailValidation'
 // Get user statistics
 const getUserStats = asyncHandler(async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ isActive: true });
-    const inactiveUsers = await User.countDocuments({ isActive: false });
-    const verifiedUsers = await User.countDocuments({ isVerified: true });
+    const totalUsers = await User.countDocuments({ userType: 'user' });
+    const activeUsers = await User.countDocuments({ userType: 'user', isActive: true });
+    const inactiveUsers = await User.countDocuments({ userType: 'user', isActive: false });
+    
+    // Calculate new users this month
+    const currentDate = new Date();
+    const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+    const newUsersThisMonth = await User.countDocuments({
+      userType: 'user',
+      createdAt: { $gte: startOfMonth }
+    });
     
     res.status(200).json({
       success: true,
       data: {
         stats: {
-          total: totalUsers,
-          active: activeUsers,
-          inactive: inactiveUsers,
-          verified: verifiedUsers
+          totalUsers: totalUsers,
+          activeUsers: activeUsers,
+          inactiveUsers: inactiveUsers,
+          newUsersThisMonth: newUsersThisMonth
         }
       }
     });
