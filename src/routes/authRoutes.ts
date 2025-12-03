@@ -11,7 +11,10 @@ import {
   forgotPassword,
   resetPasswordWithToken,
   changePassword,
-  updateProfile
+  updateProfile,
+  requestPasswordResetOTP,
+  verifyPasswordResetOTP,
+  resetPasswordWithOTP
 } from '../controllers/authController';
 import { unifiedLogin } from '../controllers/unifiedAuthController';
 import { googleMobileLogin, completeGoogleOnboarding, updateGoogleUserProfile, updateGoogleExpertProfile } from '../controllers/googleAuthController';
@@ -30,7 +33,9 @@ import {
   googleLoginSchema,
   completeOnboardingSchema,
   updateGoogleUserProfileSchema,
-  updateGoogleExpertProfileSchema
+  updateGoogleExpertProfileSchema,
+  passwordResetOTPVerificationSchema,
+  resetPasswordWithOTPSchemaProtected
 } from '../utils/validation';
 
 const router = express.Router();
@@ -88,5 +93,10 @@ router.get('/me', getCurrentUser);
 router.put('/change-password', validate(changePasswordSchema), changePassword);
 
 router.put('/profile', uploadProfileImage, handleUploadError, validate(updateProfileSchema), updateProfile);
+
+// Password reset with OTP (for logged-in users)
+router.post('/request-password-reset-otp', requestPasswordResetOTP);
+router.post('/verify-password-reset-otp', validate(passwordResetOTPVerificationSchema), verifyPasswordResetOTP);
+router.post('/reset-password-with-otp', validate(resetPasswordWithOTPSchemaProtected), resetPasswordWithOTP);
 
 export default router;

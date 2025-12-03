@@ -159,3 +159,33 @@ export const updateProfile = asyncHandler(async (req: Request, res: Response) =>
   const user = await userService.updateProfile((req as any).user._id, updateData);
   return ApiResponse.success(res, { user }, MESSAGES.USER.PROFILE_UPDATED);
 });
+
+// @desc    Request password reset OTP (for logged-in users)
+// @route   POST /api/auth/request-password-reset-otp
+// @access  Private
+export const requestPasswordResetOTP = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const userType = user.userType === 'expert' ? 'expert' : 'user';
+  await authService.requestPasswordResetOTP(user._id.toString(), userType);
+  return ApiResponse.success(res, null, MESSAGES.AUTH.OTP_SENT);
+});
+
+// @desc    Verify password reset OTP (for logged-in users)
+// @route   POST /api/auth/verify-password-reset-otp
+// @access  Private
+export const verifyPasswordResetOTP = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const userType = user.userType === 'expert' ? 'expert' : 'user';
+  await authService.verifyPasswordResetOTP(user._id.toString(), req.body.otp, userType);
+  return ApiResponse.success(res, null, MESSAGES.AUTH.OTP_VERIFIED);
+});
+
+// @desc    Reset password with OTP (for logged-in users)
+// @route   POST /api/auth/reset-password-with-otp
+// @access  Private
+export const resetPasswordWithOTP = asyncHandler(async (req: Request, res: Response) => {
+  const user = (req as any).user;
+  const userType = user.userType === 'expert' ? 'expert' : 'user';
+  await authService.resetPasswordWithOTP(user._id.toString(), req.body.otp, req.body.password, userType);
+  return ApiResponse.success(res, null, MESSAGES.AUTH.PASSWORD_RESET_SUCCESS);
+});

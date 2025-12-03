@@ -431,6 +431,103 @@ class AuthService implements IAuthService {
 
     return { message: MESSAGES.AUTH.PASSWORD_CHANGED };
   }
+
+  // Request password reset OTP (for logged-in users)
+  async requestPasswordResetOTP(userId: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string }> {
+    let user: IUser | IExpert | null;
+    if (userType === 'expert') {
+      user = await expertRepository.findById(userId);
+    } else {
+      user = await userRepository.findById(userId);
+    }
+
+    if (!user) {
+      throw new Error(MESSAGES.AUTH.USER_NOT_FOUND);
+    }
+
+    // Generate OTP for password reset
+    const otp = user.generateOTP();
+    await user.save();
+
+    // Send OTP email for password reset
+    await emailService.sendOTPEmail(user.email, otp, user.firstName, 'password_reset');
+
+    return { message: MESSAGES.AUTH.OTP_SENT };
+  }
+
+  // Verify password reset OTP (for logged-in users)
+  // Note: This verifies the OTP but doesn't clear it, so it can be used in the reset step
+  async verifyPasswordResetOTP(userId: string, otp: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string }> {
+    let user: IUser | IExpert | null;
+    if (userType === 'expert') {
+      user = await expertRepository.findById(userId);
+    } else {
+      user = await userRepository.findById(userId);
+    }
+
+    if (!user) {
+      throw new Error(MESSAGES.AUTH.USER_NOT_FOUND);
+    }
+
+    // Check if OTP is locked
+    if (user.isOTPLocked) {
+      throw new Error('OTP verification locked due to too many attempts');
+    }
+
+    // Verify OTP without clearing it (we'll clear it when resetting password)
+    if (!user.otpCode || !user.otpExpire) {
+      throw new Error('No OTP found. Please request a new one.');
+    }
+
+    if (user.otpExpire.getTime() < Date.now()) {
+      throw new Error('OTP has expired. Please request a new one.');
+    }
+
+    if (user.otpCode !== otp) {
+      user.otpAttempts += 1;
+      
+      if (user.otpAttempts >= 3) {
+        user.otpLockedUntil = new Date(Date.now() + 30 * 60 * 1000); // Lock for 30 minutes
+      }
+      
+      await user.save();
+      throw new Error('Invalid OTP');
+    }
+
+    // Reset attempts on successful verification (but don't clear OTP yet)
+    user.otpAttempts = 0;
+    user.otpLockedUntil = undefined;
+    await user.save();
+    
+    return { message: MESSAGES.AUTH.OTP_VERIFIED };
+  }
+
+  // Reset password with OTP (for logged-in users)
+  async resetPasswordWithOTP(userId: string, otp: string, newPassword: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string }> {
+    let user: IUser | IExpert | null;
+    if (userType === 'expert') {
+      user = await expertRepository.findById(userId, true); // Need password field for update
+    } else {
+      user = await userRepository.findById(userId, true); // Need password field for update
+    }
+
+    if (!user) {
+      throw new Error(MESSAGES.AUTH.USER_NOT_FOUND);
+    }
+
+    // Verify OTP first (this will clear it)
+    const otpResult = user.verifyOTP(otp);
+    if (!otpResult.success) {
+      await user.save();
+      throw new Error(otpResult.message);
+    }
+
+    // Set new password
+    user.password = newPassword;
+    await user.save();
+
+    return { message: MESSAGES.AUTH.PASSWORD_RESET_SUCCESS };
+  }
 }
 
 export default new AuthService();

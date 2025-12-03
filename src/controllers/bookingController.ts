@@ -349,6 +349,7 @@ export const createBooking = asyncHandler(async (req, res) => {
     duration?: number;
     consultationMethod?: string;
     sessionType?: string;
+    skipAvailabilityCheck?: boolean; // Skip availability check for group sessions
   };
 
   const validateSlotInput = async (slotInput: SlotInput) => {
@@ -466,7 +467,8 @@ export const createBooking = asyncHandler(async (req, res) => {
       return null;
   }
 
-    if (availabilityDoc) {
+    // Skip availability check for group sessions (one-to-many) since expert has already decided the timing
+    if (!slotInput.skipAvailabilityCheck && availabilityDoc) {
   const dayOfWeek = sessionDateTime.toLocaleDateString('en-US', { weekday: 'long' });
       const dayAvailability = availabilityDoc.availability.find(
       day => day.day === dayOfWeek
@@ -541,12 +543,16 @@ export const createBooking = asyncHandler(async (req, res) => {
       const sessionPayload = planSessions[0];
       const finalDuration = sessionPayload.duration || plan.duration || 60;
 
+      // Skip availability check for group sessions (one-to-many) since expert has already decided the timing
+      const isGroupSession = plan.sessionFormat === 'one-to-many';
+
       const validatedSlot = await validateSlotInput({
         sessionDate: sessionPayload.sessionDate,
         startTime: sessionPayload.startTime,
         duration: finalDuration,
         consultationMethod: sessionPayload.consultationMethod,
-        sessionType: sessionPayload.sessionType
+        sessionType: sessionPayload.sessionType,
+        skipAvailabilityCheck: isGroupSession
       });
 
       if (!validatedSlot) {
@@ -558,6 +564,33 @@ export const createBooking = asyncHandler(async (req, res) => {
           success: false,
           message: `Plan requires ${plan.sessionFormat} sessions`
         });
+      }
+
+      // For group sessions, check if user already has a booking for this plan, date, and time
+      if (isGroupSession) {
+        const sessionDateTime = validatedSlot.sessionDateTime;
+        const startOfDay = new Date(sessionDateTime);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(sessionDateTime);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const existingGroupBooking = await Appointment.findOne({
+          user: currentUser._id,
+          planId: plan._id,
+          sessionDate: {
+            $gte: startOfDay,
+            $lte: endOfDay
+          },
+          startTime: sessionPayload.startTime,
+          status: { $in: ['pending', 'confirmed'] }
+        });
+
+        if (existingGroupBooking) {
+          return res.status(400).json({
+            success: false,
+            message: 'You have already booked this group session. You cannot book the same session twice.'
+          });
+        }
       }
 
       const price = plan.price ?? Math.round(((expert.hourlyRate || 0) * finalDuration) / 60);
@@ -634,6 +667,9 @@ export const createBooking = asyncHandler(async (req, res) => {
     const perSessionPrice = Math.round((plan.monthlyPrice / plan.classesPerMonth) * 100) / 100;
     const createdAppointments: IAppointment[] = [];
 
+    // Skip availability check for group sessions (one-to-many) since expert has already decided the timing
+    const isGroupSession = plan.sessionFormat === 'one-to-many';
+
     for (let i = 0; i < planSessions.length; i++) {
       const sessionPayload = planSessions[i];
       const finalDuration = sessionPayload.duration || plan.duration || 60;
@@ -643,7 +679,8 @@ export const createBooking = asyncHandler(async (req, res) => {
         startTime: sessionPayload.startTime,
         duration: finalDuration,
         consultationMethod: sessionPayload.consultationMethod,
-        sessionType: sessionPayload.sessionType
+        sessionType: sessionPayload.sessionType,
+        skipAvailabilityCheck: isGroupSession
       });
 
       if (!validatedSlot) {
@@ -1117,56 +1154,70 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
     });
   }
 
-  // Check expert availability for the new date
-  const availability = await ExpertAvailability.findOne({
-    expert: appointment.expert
-  });
-
-  if (!availability) {
-    return res.status(400).json({
-      success: false,
-      message: 'Expert has not set their availability'
-    });
-  }
-
-  // Parse the requested date to get day name
-  const dayOfWeek = newSessionDate.toLocaleDateString('en-US', { weekday: 'long' }); // e.g., "Tuesday"
+  // Check if this is a group session - skip availability check for group sessions
+  let isGroupSession = appointment.sessionType === 'one-to-many';
   
-  // Find the day in availability array
-  const dayAvailability = availability.availability.find(
-    day => day.day === dayOfWeek
-  );
-
-  if (!dayAvailability || !dayAvailability.isOpen || !dayAvailability.timeRanges || dayAvailability.timeRanges.length === 0) {
-    return res.status(400).json({
-      success: false,
-      message: `Expert is not available on ${dayOfWeek}`
-    });
-  }
-
-  // Check if the time slot falls within any of the expert's available time ranges for that day
-  let isWithinAvailableHours = false;
-  for (const timeRange of dayAvailability.timeRanges) {
-    const [rangeStartHour, rangeStartMin] = timeRange.startTime.split(':').map(Number);
-    const [rangeEndHour, rangeEndMin] = timeRange.endTime.split(':').map(Number);
-    const rangeStartTotal = rangeStartHour * 60 + rangeStartMin;
-    const rangeEndTotal = rangeEndHour * 60 + rangeEndMin;
-
-    // Check if the requested time slot overlaps with this time range
-    if (startTotal >= rangeStartTotal && endTotal <= rangeEndTotal) {
-      isWithinAvailableHours = true;
-      break;
+  // Also check if the appointment is part of a group session plan
+  if (!isGroupSession && appointment.planId) {
+    const plan = await Plan.findById(appointment.planId);
+    if (plan && plan.sessionFormat === 'one-to-many') {
+      isGroupSession = true;
     }
   }
 
-  if (!isWithinAvailableHours) {
-    const timeRangesStr = dayAvailability.timeRanges
-      .map(range => `${range.startTime} - ${range.endTime}`)
-      .join(', ');
-    return res.status(400).json({
-      success: false,
-      message: `The selected time is outside expert's available hours on ${dayOfWeek} (${timeRangesStr})`
+  // Skip availability check for group sessions since expert has already decided the timing
+  if (!isGroupSession) {
+    // Check expert availability for the new date
+    const availability = await ExpertAvailability.findOne({
+      expert: appointment.expert
     });
+
+    if (!availability) {
+      return res.status(400).json({
+        success: false,
+        message: 'Expert has not set their availability'
+      });
+    }
+
+    // Parse the requested date to get day name
+    const dayOfWeek = newSessionDate.toLocaleDateString('en-US', { weekday: 'long' }); // e.g., "Tuesday"
+    
+    // Find the day in availability array
+    const dayAvailability = availability.availability.find(
+      day => day.day === dayOfWeek
+    );
+
+    if (!dayAvailability || !dayAvailability.isOpen || !dayAvailability.timeRanges || dayAvailability.timeRanges.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Expert is not available on ${dayOfWeek}`
+      });
+    }
+
+    // Check if the time slot falls within any of the expert's available time ranges for that day
+    let isWithinAvailableHours = false;
+    for (const timeRange of dayAvailability.timeRanges) {
+      const [rangeStartHour, rangeStartMin] = timeRange.startTime.split(':').map(Number);
+      const [rangeEndHour, rangeEndMin] = timeRange.endTime.split(':').map(Number);
+      const rangeStartTotal = rangeStartHour * 60 + rangeStartMin;
+      const rangeEndTotal = rangeEndHour * 60 + rangeEndMin;
+
+      // Check if the requested time slot overlaps with this time range
+      if (startTotal >= rangeStartTotal && endTotal <= rangeEndTotal) {
+        isWithinAvailableHours = true;
+        break;
+      }
+    }
+
+    if (!isWithinAvailableHours) {
+      const timeRangesStr = dayAvailability.timeRanges
+        .map(range => `${range.startTime} - ${range.endTime}`)
+        .join(', ');
+      return res.status(400).json({
+        success: false,
+        message: `The selected time is outside expert's available hours on ${dayOfWeek} (${timeRangesStr})`
+      });
+    }
   }
 
   // Update appointment
