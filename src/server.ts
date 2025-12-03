@@ -31,6 +31,7 @@ import adminExpertRoutes from './routes/admin/expertRoutes';
 import adminSubscriptionRoutes from './routes/admin/subscriptionRoutes';
 import adminBookingRoutes from './routes/admin/bookingRoutes';
 import adminPaymentRoutes from './routes/admin/paymentRoutes';
+import adminDashboardRoutes from './routes/admin/dashboardRoutes';
 
 // Import seeders
 import { runSeeders } from './seeders';
@@ -119,6 +120,7 @@ app.use('/api/plans', planRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/admin/users', userRoutes);
 app.use('/api/admin/experts', adminExpertRoutes);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
