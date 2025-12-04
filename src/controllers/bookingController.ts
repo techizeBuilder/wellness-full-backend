@@ -436,35 +436,40 @@ export const createBooking = asyncHandler(async (req, res) => {
   const endOfDay = new Date(sessionDateTime);
   endOfDay.setHours(23, 59, 59, 999);
 
-  const existingAppointments = await Appointment.find({
-    expert: expertId,
-    sessionDate: {
-      $gte: startOfDay,
-      $lte: endOfDay
-    },
-    status: { $in: ['pending', 'confirmed'] }
-  }).select('startTime endTime');
+  // For group sessions (one-to-many), skip conflict check - multiple customers can book the same session
+  // For one-on-one sessions, check for conflicts with other one-on-one sessions only
+  if (slotSessionType !== 'one-to-many') {
+    const existingAppointments = await Appointment.find({
+      expert: expertId,
+      sessionDate: {
+        $gte: startOfDay,
+        $lte: endOfDay
+      },
+      sessionType: 'one-on-one', // Only check conflicts with other one-on-one sessions
+      status: { $in: ['pending', 'confirmed'] }
+    }).select('startTime endTime');
 
-  const conflictingAppointment = existingAppointments.find(apt => {
-    const [aptStartHour, aptStartMin] = apt.startTime.split(':').map(Number);
-    const [aptEndHour, aptEndMin] = apt.endTime.split(':').map(Number);
+    const conflictingAppointment = existingAppointments.find(apt => {
+      const [aptStartHour, aptStartMin] = apt.startTime.split(':').map(Number);
+      const [aptEndHour, aptEndMin] = apt.endTime.split(':').map(Number);
       const [reqStartHour, reqStartMin] = slotStart.split(':').map(Number);
-    const [reqEndHour, reqEndMin] = endTime.split(':').map(Number);
-    
-    const aptStartTotal = aptStartHour * 60 + aptStartMin;
-    const aptEndTotal = aptEndHour * 60 + aptEndMin;
-    const reqStartTotal = reqStartHour * 60 + reqStartMin;
-    const reqEndTotal = reqEndHour * 60 + reqEndMin;
-    
-    return (reqStartTotal < aptEndTotal && reqEndTotal > aptStartTotal);
-  });
-
-  if (conflictingAppointment) {
-      res.status(400).json({
-      success: false,
-      message: 'This time slot is already booked. Please select another time.'
+      const [reqEndHour, reqEndMin] = endTime.split(':').map(Number);
+      
+      const aptStartTotal = aptStartHour * 60 + aptStartMin;
+      const aptEndTotal = aptEndHour * 60 + aptEndMin;
+      const reqStartTotal = reqStartHour * 60 + reqStartMin;
+      const reqEndTotal = reqEndHour * 60 + reqEndMin;
+      
+      return (reqStartTotal < aptEndTotal && reqEndTotal > aptStartTotal);
     });
+
+    if (conflictingAppointment) {
+      res.status(400).json({
+        success: false,
+        message: 'This time slot is already booked. Please select another time.'
+      });
       return null;
+    }
   }
 
     // Skip availability check for group sessions (one-to-many) since expert has already decided the timing
@@ -1129,10 +1134,31 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
     });
   }
 
+  // Check if this is a group session - prevent rescheduling group sessions
+  let isGroupSession = appointment.sessionType === 'one-to-many';
+  
+  // Also check if the appointment is part of a group session plan
+  if (!isGroupSession && appointment.planId) {
+    const plan = await Plan.findById(appointment.planId);
+    if (plan && plan.sessionFormat === 'one-to-many') {
+      isGroupSession = true;
+    }
+  }
+
+  // Prevent rescheduling group sessions - they are scheduled by the expert for all participants
+  if (isGroupSession) {
+    return res.status(400).json({
+      success: false,
+      message: 'Group sessions cannot be rescheduled. Please contact the expert if you need to change the session time.'
+    });
+  }
+
   // Check for time slot conflicts (excluding the current appointment)
+  // Only check conflicts with one-on-one sessions
   const existingAppointments = await Appointment.find({
     expert: appointment.expert,
     sessionDate: newSessionDate,
+    sessionType: 'one-on-one', // Only check conflicts with other one-on-one sessions
     status: { $in: ['pending', 'confirmed'] },
     _id: { $ne: appointment._id } // Exclude current appointment
   });
@@ -1152,17 +1178,6 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
       success: false,
       message: 'The selected time slot is already booked. Please choose another time.'
     });
-  }
-
-  // Check if this is a group session - skip availability check for group sessions
-  let isGroupSession = appointment.sessionType === 'one-to-many';
-  
-  // Also check if the appointment is part of a group session plan
-  if (!isGroupSession && appointment.planId) {
-    const plan = await Plan.findById(appointment.planId);
-    if (plan && plan.sessionFormat === 'one-to-many') {
-      isGroupSession = true;
-    }
   }
 
   // Skip availability check for group sessions since expert has already decided the timing
@@ -1328,9 +1343,72 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     });
   }
 
+  // Ensure agoraChannelName is set, and for group sessions, ensure shared channel
   if (!appointment.agoraChannelName) {
-    appointment.agoraChannelName = `booking_${appointment._id.toString()}`;
+    if (appointment.sessionType === 'one-to-many') {
+      // For group sessions, use shared channel
+      const groupSessionId = (appointment as any).groupSessionId;
+      if (groupSessionId) {
+        // Monthly group session created by expert
+        appointment.agoraChannelName = `group_${groupSessionId}`;
+        // Update all appointments in this group to use the same channel
+        await Appointment.updateMany(
+          { groupSessionId: groupSessionId },
+          { agoraChannelName: appointment.agoraChannelName }
+        );
+      } else if (appointment.planId) {
+        // Single group session plan - use planId + date + time
+        const sessionDate = new Date(appointment.sessionDate);
+        const dateStr = sessionDate.toISOString().split('T')[0].replace(/-/g, '');
+        const timeStr = appointment.startTime.replace(':', '');
+        appointment.agoraChannelName = `group_plan_${appointment.planId.toString()}_${dateStr}_${timeStr}`;
+        // Update all appointments for this plan/date/time to use the same channel
+        const startOfDay = new Date(sessionDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(sessionDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        await Appointment.updateMany(
+          {
+            planId: appointment.planId,
+            sessionDate: { $gte: startOfDay, $lte: endOfDay },
+            startTime: appointment.startTime,
+            sessionType: 'one-to-many'
+          },
+          { agoraChannelName: appointment.agoraChannelName }
+        );
+      } else {
+        appointment.agoraChannelName = `booking_${appointment._id.toString()}`;
+      }
+    } else {
+      appointment.agoraChannelName = `booking_${appointment._id.toString()}`;
+    }
     await appointment.save();
+  } else if (appointment.sessionType === 'one-to-many') {
+    // If channel name exists but this is a group session, ensure all participants use the same channel
+    const groupSessionId = (appointment as any).groupSessionId;
+    if (groupSessionId) {
+      // Update all appointments in this group to use the same channel
+      await Appointment.updateMany(
+        { groupSessionId: groupSessionId },
+        { agoraChannelName: appointment.agoraChannelName }
+      );
+    } else if (appointment.planId) {
+      // For single group session plans, ensure all appointments for same plan/date/time use same channel
+      const sessionDate = new Date(appointment.sessionDate);
+      const startOfDay = new Date(sessionDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(sessionDate);
+      endOfDay.setHours(23, 59, 59, 999);
+      await Appointment.updateMany(
+        {
+          planId: appointment.planId,
+          sessionDate: { $gte: startOfDay, $lte: endOfDay },
+          startTime: appointment.startTime,
+          sessionType: 'one-to-many'
+        },
+        { agoraChannelName: appointment.agoraChannelName }
+      );
+    }
   }
 
   const channelName = appointment.agoraChannelName as string;

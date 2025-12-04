@@ -24,6 +24,7 @@ export interface IAppointment extends Document {
   cancelledBy?: 'user' | 'expert';
   cancellationReason?: string;
   agoraChannelName?: string;
+  groupSessionId?: string; // For grouping appointments in the same group session
   feedbackRating?: number;
   feedbackComment?: string;
   feedbackSubmittedAt?: Date;
@@ -146,6 +147,10 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
     type: String,
     index: true
   },
+  groupSessionId: {
+    type: String,
+    index: true
+  },
   feedbackRating: {
     type: Number,
     min: [1, 'Rating must be at least 1'],
@@ -225,8 +230,27 @@ appointmentSchema.pre('save', function(next) {
 });
 
 appointmentSchema.pre('save', function(next) {
-  if (this.consultationMethod === 'video' && !this.agoraChannelName) {
-    this.agoraChannelName = `booking_${this._id.toString()}`;
+  // Set agoraChannelName for video/audio consultations
+  if ((this.consultationMethod === 'video' || this.consultationMethod === 'audio') && !this.agoraChannelName) {
+    if (this.sessionType === 'one-to-many') {
+      // For group sessions, use shared channel
+      if ((this as any).groupSessionId) {
+        // Monthly group session created by expert - use groupSessionId
+        this.agoraChannelName = `group_${(this as any).groupSessionId}`;
+      } else if (this.planId) {
+        // Single group session plan - use planId + date + time for shared channel
+        const sessionDate = new Date(this.sessionDate);
+        const dateStr = sessionDate.toISOString().split('T')[0].replace(/-/g, '');
+        const timeStr = this.startTime.replace(':', '');
+        this.agoraChannelName = `group_plan_${this.planId.toString()}_${dateStr}_${timeStr}`;
+      } else {
+        // Fallback to appointment ID (shouldn't happen for group sessions)
+        this.agoraChannelName = `booking_${this._id.toString()}`;
+      }
+    } else {
+      // One-on-one session - use appointment ID
+      this.agoraChannelName = `booking_${this._id.toString()}`;
+    }
   }
   next();
 });

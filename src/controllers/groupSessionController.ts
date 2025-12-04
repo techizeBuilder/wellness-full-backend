@@ -136,6 +136,9 @@ export const createGroupSessionForPlan = asyncHandler(async (req, res) => {
 
   // Use a new groupSessionId to link all appointments created for this group session
   const groupSessionId = new mongoose.Types.ObjectId().toString();
+  
+  // Create shared channel name for all participants in this group session
+  const sharedChannelName = `group_${groupSessionId}`;
 
   const pricePerSession =
     plan.monthlyPrice && plan.classesPerMonth
@@ -165,8 +168,9 @@ export const createGroupSessionForPlan = asyncHandler(async (req, res) => {
       planSessionNumber: undefined,
       planTotalSessions: plan.classesPerMonth,
       planPrice: pricePerSession,
+      // Set shared channel name for group sessions
+      agoraChannelName: (consultationMethod === 'video' || consultationMethod === 'audio') ? sharedChannelName : undefined,
       // Extra field to logically group the session across users
-      // (not in interface, but MongoDB will store it)
       groupSessionId
     } as any);
 

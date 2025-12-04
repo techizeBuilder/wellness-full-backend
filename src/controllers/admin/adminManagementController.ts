@@ -114,6 +114,16 @@ const updateAdmin = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'You cannot change your own role' });
   }
 
+  // Prevent admin from deactivating themselves
+  if (req.admin.id === id && isActive === false) {
+    return res.status(400).json({ success: false, message: 'You cannot deactivate yourself' });
+  }
+
+  // Prevent superadmin from deactivating itself (only if trying to deactivate themselves)
+  if (req.admin.id === id && admin.role === 'superadmin' && isActive === false) {
+    return res.status(400).json({ success: false, message: 'Superadmin cannot deactivate itself' });
+  }
+
   if (name) admin.name = name;
   if (typeof isActive === 'boolean') admin.isActive = isActive;
   if (permissions) admin.permissions = permissions;
