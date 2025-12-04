@@ -78,10 +78,13 @@ export const createOrder = async (amount: number, currency: string = 'INR', rece
 // Verify payment signature
 export const verifyPaymentSignature = (orderId: string, paymentId: string, signature: string): boolean => {
   try {
-    const razorpay = getRazorpayInstance();
+    if (!ENV.RAZORPAY_KEY_SECRET) {
+      logger.error('Razorpay key secret not configured');
+      return false;
+    }
     const text = `${orderId}|${paymentId}`;
     const generatedSignature = crypto
-      .createHmac('sha256', razorpay.key_secret || '')
+      .createHmac('sha256', ENV.RAZORPAY_KEY_SECRET)
       .update(text)
       .digest('hex');
 
@@ -120,7 +123,7 @@ export const fetchPaymentDetails = async (paymentId: string) => {
     
     return {
       id: payment.id,
-      amount: payment.amount / 100, // Convert from paise to rupees
+      amount: Number(payment.amount) / 100, // Convert from paise to rupees
       currency: payment.currency,
       status: payment.status,
       method: payment.method,

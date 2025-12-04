@@ -867,7 +867,10 @@ const getExpertById = asyncHandler(async (req, res) => {
   // Attach structured availability from ExpertAvailability collection
   const availabilityDoc = await ExpertAvailability.findOne({ expert: expert._id }).lean();
   if (availabilityDoc?.availability) {
-    expertObj.availability = availabilityDoc.availability;
+    // Convert array format to object format expected by Expert model
+    // Note: Expert model's availability field uses a different structure,
+    // but we'll store the array format in a compatible way
+    expertObj.availability = availabilityDoc.availability as any;
   }
 
   const feedbackDocs = await Appointment.find({

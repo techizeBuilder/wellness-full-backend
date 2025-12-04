@@ -177,7 +177,7 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
       data: {
         paymentId: payment._id,
         orderId: razorpayOrder.id,
-        amount: razorpayOrder.amount / 100, // Convert from paise to rupees
+        amount: Number(razorpayOrder.amount) / 100, // Convert from paise to rupees
         currency: razorpayOrder.currency,
         key: ENV.RAZORPAY_KEY_ID // Frontend needs this for Razorpay Checkout
       },
@@ -266,7 +266,7 @@ export const verifyPayment = asyncHandler(async (req, res) => {
     }
 
     // Mark payment as completed
-    await payment.markAsCompleted(razorpayPaymentId || orderId, signature);
+    await (payment as any).markAsCompleted(razorpayPaymentId || orderId, signature);
 
     // Update related records and send booking confirmation emails
     if (payment.appointment) {
@@ -351,7 +351,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
       });
 
       if (payment && payment.status !== 'completed') {
-        await payment.markAsCompleted(paymentData.id);
+        await (payment as any).markAsCompleted(paymentData.id);
 
         // Update related records and send booking confirmation emails
         if (payment.appointment) {
@@ -383,7 +383,7 @@ export const handleWebhook = asyncHandler(async (req, res) => {
       });
 
       if (payment && payment.status !== 'failed') {
-        await payment.markAsFailed('Payment failed via Razorpay');
+        await (payment as any).markAsFailed('Payment failed via Razorpay');
         logger.info(`Payment ${payment._id} marked as failed via webhook`);
       }
     }

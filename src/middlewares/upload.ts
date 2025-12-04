@@ -181,5 +181,3 @@ export const getFilePath = (filename?: string | null, type: 'profiles' | 'docume
   return path.join(__dirname, '..', 'uploads', type, filename);
 };
 
-// Export uploadCertificates middleware
-export { uploadCertificates };

@@ -112,7 +112,7 @@ export const cancelSubscription = asyncHandler(async (req, res) => {
   }
 
   // Cancel the subscription
-  await subscription.cancel('user', reason);
+  await (subscription as any).cancel('user', reason);
 
   // Optionally cancel future appointments (pending/confirmed ones)
   const futureAppointments = await Appointment.find({

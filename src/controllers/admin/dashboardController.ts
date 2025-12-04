@@ -252,20 +252,29 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
     });
 
     // Format recent bookings
-    const formattedRecentBookings = recentBookings.map(booking => ({
-      id: booking._id.toString().substring(0, 8).toUpperCase(),
-      user: booking.user 
-        ? `${booking.user.firstName || ''} ${booking.user.lastName || ''}`.trim() 
-        : 'N/A',
-      expert: booking.expert 
-        ? `${booking.expert.firstName || ''} ${booking.expert.lastName || ''}`.trim() 
-        : 'N/A',
-      service: booking.expert?.specialization || 'N/A',
-      date: booking.sessionDate ? new Date(booking.sessionDate).toISOString().split('T')[0] : 'N/A',
-      time: booking.startTime || 'N/A',
-      status: booking.status ? booking.status.charAt(0).toUpperCase() + booking.status.slice(1) : 'Pending',
-      amount: booking.price || 0
-    }));
+    const formattedRecentBookings = recentBookings.map(booking => {
+      const user = booking.user && typeof booking.user === 'object' && 'firstName' in booking.user 
+        ? booking.user as { firstName?: string; lastName?: string }
+        : null;
+      const expert = booking.expert && typeof booking.expert === 'object' && 'firstName' in booking.expert
+        ? booking.expert as { firstName?: string; lastName?: string; specialization?: string }
+        : null;
+      
+      return {
+        id: booking._id.toString().substring(0, 8).toUpperCase(),
+        user: user 
+          ? `${user.firstName || ''} ${user.lastName || ''}`.trim() 
+          : 'N/A',
+        expert: expert 
+          ? `${expert.firstName || ''} ${expert.lastName || ''}`.trim() 
+          : 'N/A',
+        service: expert?.specialization || 'N/A',
+        date: booking.sessionDate ? new Date(booking.sessionDate).toISOString().split('T')[0] : 'N/A',
+        time: booking.startTime || 'N/A',
+        status: booking.status ? booking.status.charAt(0).toUpperCase() + booking.status.slice(1) : 'Pending',
+        amount: booking.price || 0
+      };
+    });
 
     // Calculate percentage changes (comparing last month to previous month)
     const currentMonth = new Date();
