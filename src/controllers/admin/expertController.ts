@@ -81,15 +81,16 @@ const getExperts = asyncHandler(async (req, res) => {
 
   // Date range filter (for expert registration date)
   if (startDate || endDate) {
-    query.createdAt = {};
+    const dateFilter: { $gte?: Date; $lte?: Date } = {};
     if (startDate) {
-      query.createdAt.$gte = new Date(startDate as string);
+      dateFilter.$gte = new Date(startDate as string);
     }
     if (endDate) {
       const end = new Date(endDate as string);
       end.setHours(23, 59, 59, 999); // Include the entire end date
-      query.createdAt.$lte = end;
+      dateFilter.$lte = end;
     }
+    query.createdAt = dateFilter;
   }
   
   const pageNumber = Number(page) || 1;
