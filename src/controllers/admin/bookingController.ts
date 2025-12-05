@@ -7,7 +7,7 @@ import User from '../../models/User';
 // @route   GET /api/admin/bookings
 // @access  Private (Admin)
 export const getAllBookings = asyncHandler(async (req, res) => {
-  const { status, page = 1, limit = 10, search } = req.query;
+  const { status, page = 1, limit = 10, search, startDate, endDate, specialization } = req.query;
   const pageNum = parseInt(page as string, 10);
   const limitNum = parseInt(limit as string, 10);
   const skip = (pageNum - 1) * limitNum;
@@ -18,16 +18,43 @@ export const getAllBookings = asyncHandler(async (req, res) => {
     query.status = status.toLowerCase();
   }
 
+  // Date range filter
+  if (startDate || endDate) {
+    query.sessionDate = {};
+    if (startDate) {
+      query.sessionDate.$gte = new Date(startDate as string);
+    }
+    if (endDate) {
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999); // Include the entire end date
+      query.sessionDate.$lte = end;
+    }
+  }
+
+  // Specialization filter - we'll filter after populating expert
+  let specializationFilter = null;
+  if (specialization && specialization !== 'All') {
+    specializationFilter = specialization as string;
+  }
+
   // Search functionality - we'll filter after populating
   // Note: MongoDB text search on populated fields is complex, so we'll do client-side filtering
   // For better performance, you could use aggregation pipeline with $lookup
 
-  const appointments = await Appointment.find(query)
+  let appointments = await Appointment.find(query)
     .populate('user', 'firstName lastName email')
     .populate('expert', 'firstName lastName specialization profileImage')
     .sort({ sessionDate: -1, startTime: -1 })
     .skip(skip)
     .limit(limitNum);
+
+  // Filter by specialization if provided
+  if (specializationFilter) {
+    appointments = appointments.filter((apt: any) => 
+      apt.expert && apt.expert.specialization && 
+      apt.expert.specialization.toLowerCase() === specializationFilter.toLowerCase()
+    );
+  }
 
   const total = await Appointment.countDocuments(query);
 

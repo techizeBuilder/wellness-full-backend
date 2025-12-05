@@ -55,7 +55,7 @@ const getExpertStats = asyncHandler(async (req, res) => {
 
 // Get all experts
 const getExperts = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, search, status, specialty } = req.query;
+  const { page = 1, limit = 10, search, status, specialty, startDate, endDate } = req.query;
   
   const query: Record<string, unknown> = {};
   
@@ -77,6 +77,19 @@ const getExperts = asyncHandler(async (req, res) => {
   // Add specialty filter
   if (specialty) {
     query.specialization = { $regex: specialty, $options: 'i' };
+  }
+
+  // Date range filter (for expert registration date)
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) {
+      query.createdAt.$gte = new Date(startDate as string);
+    }
+    if (endDate) {
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999); // Include the entire end date
+      query.createdAt.$lte = end;
+    }
   }
   
   const pageNumber = Number(page) || 1;

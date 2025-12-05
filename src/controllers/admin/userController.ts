@@ -38,7 +38,7 @@ const getUserStats = asyncHandler(async (req, res) => {
 
 // Get all users
 const getUsers = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, search, status } = req.query;
+  const { page = 1, limit = 10, search, status, startDate, endDate } = req.query;
   
   const query: Record<string, unknown> = {};
   
@@ -54,6 +54,19 @@ const getUsers = asyncHandler(async (req, res) => {
   // Add status filter
   if (status && ['active', 'inactive'].includes(status)) {
     query.isActive = status === 'active';
+  }
+
+  // Date range filter (for user registration date)
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) {
+      query.createdAt.$gte = new Date(startDate as string);
+    }
+    if (endDate) {
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999); // Include the entire end date
+      query.createdAt.$lte = end;
+    }
   }
   
   const pageNumber = Number(page) || 1;

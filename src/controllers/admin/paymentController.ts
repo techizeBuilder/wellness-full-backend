@@ -6,7 +6,7 @@ import User from '../../models/User';
 // @route   GET /api/admin/payments
 // @access  Private (Admin)
 export const getAllPayments = asyncHandler(async (req, res) => {
-  const { status, page = 1, limit = 20, search } = req.query;
+  const { status, page = 1, limit = 20, search, startDate, endDate, specialization } = req.query;
   const pageNum = parseInt(page as string, 10);
   const limitNum = parseInt(limit as string, 10);
   const skip = (pageNum - 1) * limitNum;
@@ -24,6 +24,25 @@ export const getAllPayments = asyncHandler(async (req, res) => {
       'Cancelled': 'cancelled'
     };
     query.status = statusMap[status] || status.toLowerCase();
+  }
+
+  // Date range filter
+  if (startDate || endDate) {
+    query.createdAt = {};
+    if (startDate) {
+      query.createdAt.$gte = new Date(startDate as string);
+    }
+    if (endDate) {
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999); // Include the entire end date
+      query.createdAt.$lte = end;
+    }
+  }
+
+  // Specialization filter - we'll filter after populating expert
+  let specializationFilter = null;
+  if (specialization && specialization !== 'All') {
+    specializationFilter = specialization as string;
   }
 
   // Build search query if provided
@@ -57,7 +76,7 @@ export const getAllPayments = asyncHandler(async (req, res) => {
   const finalQuery = { ...query, ...searchQuery };
 
   // Get payments with populated data
-  const payments = await Payment.find(finalQuery)
+  let payments = await Payment.find(finalQuery)
     .populate('user', 'firstName lastName email')
     .populate('expert', 'firstName lastName specialization')
     .populate('appointment', 'sessionDate startTime duration')
@@ -65,6 +84,14 @@ export const getAllPayments = asyncHandler(async (req, res) => {
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(limitNum);
+
+  // Filter by specialization if provided
+  if (specializationFilter) {
+    payments = payments.filter((payment: any) => 
+      payment.expert && payment.expert.specialization && 
+      payment.expert.specialization.toLowerCase() === specializationFilter.toLowerCase()
+    );
+  }
 
   const total = await Payment.countDocuments(finalQuery);
 

@@ -3,9 +3,12 @@ import {
   createPaymentOrder,
   verifyPayment,
   handleWebhook,
-  getPaymentHistory
+  getPaymentHistory,
+  getExpertEarnings,
+  getExpertPayouts
 } from '../controllers/paymentController';
 import { protect } from '../middlewares/auth';
+import { authorize } from '../middlewares/auth';
 
 const router = express.Router();
 
@@ -23,6 +26,10 @@ router.post('/verify', verifyPayment);
 
 // Get payment history
 router.get('/history', getPaymentHistory);
+
+// Expert-specific routes
+router.get('/expert/earnings', authorize('expert'), getExpertEarnings);
+router.get('/expert/payouts', authorize('expert'), getExpertPayouts);
 
 export default router;
 

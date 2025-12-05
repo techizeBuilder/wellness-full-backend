@@ -439,3 +439,213 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get expert's earnings (daily, weekly, monthly, total)
+// @route   GET /api/payments/expert/earnings
+// @access  Private (Expert)
+export const getExpertEarnings = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  // Find expert by user ID or email
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+  
+  let expert = await Expert.findById(userId).select('_id');
+  if (!expert && userEmail) {
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+  }
+
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert profile not found'
+    });
+  }
+
+  const expertId = expert._id.toString();
+
+  // Get current date boundaries
+  const now = new Date();
+  const startOfToday = new Date(now.setHours(0, 0, 0, 0));
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+  startOfWeek.setHours(0, 0, 0, 0);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  // Calculate earnings for different timeframes
+  const [dailyEarnings, weeklyEarnings, monthlyEarnings, totalEarnings] = await Promise.all([
+    // Daily earnings
+    Payment.aggregate([
+      {
+        $match: {
+          expert: expert._id,
+          status: 'completed',
+          paidAt: { $gte: startOfToday }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ]),
+    // Weekly earnings
+    Payment.aggregate([
+      {
+        $match: {
+          expert: expert._id,
+          status: 'completed',
+          paidAt: { $gte: startOfWeek }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ]),
+    // Monthly earnings
+    Payment.aggregate([
+      {
+        $match: {
+          expert: expert._id,
+          status: 'completed',
+          paidAt: { $gte: startOfMonth }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ]),
+    // Total earnings
+    Payment.aggregate([
+      {
+        $match: {
+          expert: expert._id,
+          status: 'completed'
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ])
+  ]);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      daily: dailyEarnings[0]?.total || 0,
+      weekly: weeklyEarnings[0]?.total || 0,
+      monthly: monthlyEarnings[0]?.total || 0,
+      total: totalEarnings[0]?.total || 0
+    }
+  });
+});
+
+// @desc    Get expert's payout history and next payout date
+// @route   GET /api/payments/expert/payouts
+// @access  Private (Expert)
+export const getExpertPayouts = asyncHandler(async (req, res) => {
+  const currentUser = req.user;
+
+  if (!currentUser || !currentUser._id) {
+    return res.status(401).json({
+      success: false,
+      message: 'User not authenticated'
+    });
+  }
+
+  // Find expert by user ID or email
+  const userId = currentUser._id.toString();
+  const userEmail = currentUser.email || (currentUser as any).email;
+  
+  let expert = await Expert.findById(userId).select('_id');
+  if (!expert && userEmail) {
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+  }
+
+  if (!expert) {
+    return res.status(404).json({
+      success: false,
+      message: 'Expert profile not found'
+    });
+  }
+
+  const expertId = expert._id.toString();
+
+  // Get completed payments (these represent earnings that can be paid out)
+  // For simplicity, we'll treat completed payments as potential payouts
+  // In a real system, you'd have a separate Payout model tracking actual payouts
+  const completedPayments = await Payment.find({
+    expert: expert._id,
+    status: 'completed'
+  })
+    .sort({ paidAt: -1 })
+    .limit(10)
+    .populate('user', 'firstName lastName')
+    .populate('appointment', 'sessionDate startTime')
+    .select('amount paidAt description user appointment');
+
+  // Calculate total pending payout (all completed payments)
+  const pendingPayout = await Payment.aggregate([
+    {
+      $match: {
+        expert: expert._id,
+        status: 'completed'
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: '$amount' }
+      }
+    }
+  ]);
+
+  // Calculate last payout (most recent completed payment)
+  const lastPayout = completedPayments.length > 0 ? {
+    amount: completedPayments[0].amount,
+    date: completedPayments[0].paidAt || completedPayments[0].createdAt
+  } : null;
+
+  // Calculate next payout date (assuming monthly payouts on the 1st of next month)
+  const now = new Date();
+  const nextPayoutDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  nextPayoutDate.setHours(0, 0, 0, 0);
+
+  res.status(200).json({
+    success: true,
+    data: {
+      lastPayout: lastPayout ? {
+        amount: lastPayout.amount,
+        date: lastPayout.date.toISOString()
+      } : null,
+      nextPayoutDate: nextPayoutDate.toISOString(),
+      pendingPayout: pendingPayout[0]?.total || 0,
+      recentPayouts: completedPayments.slice(0, 5).map(payment => ({
+        amount: payment.amount,
+        date: (payment.paidAt || payment.createdAt).toISOString(),
+        description: payment.description,
+        user: payment.user ? {
+          name: `${(payment.user as any).firstName} ${(payment.user as any).lastName}`
+        } : null
+      }))
+    }
+  });
+});
+
