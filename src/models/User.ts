@@ -144,10 +144,20 @@ const userSchema = new mongoose.Schema<IUser, UserModel>({
   },
   bloodGroup: {
     type: String,
-    enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
     uppercase: true,
     trim: true,
-    default: null
+    default: null,
+    validate: {
+      validator: function(value: string | null | undefined) {
+        // Allow null or undefined values
+        if (value === null || value === undefined || value === '') {
+          return true;
+        }
+        // If value is provided, it must be one of the valid blood groups
+        return ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].includes(value);
+      },
+      message: 'Blood group must be one of: A+, A-, B+, B-, AB+, AB-, O+, O-'
+    }
   },
   weightKg: {
     type: Number,

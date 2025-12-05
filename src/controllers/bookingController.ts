@@ -22,7 +22,30 @@ type PopulatedAppointment = IAppointment & {
   expert: ParticipantDetails;
 };
 
-const getSessionDateTimes = (appointment: IAppointment) => {
+const getSessionDateTimes = async (appointment: IAppointment) => {
+  // For dynamic group sessions, fetch date/time from plan
+  if ((appointment as any).isDynamicGroupSession && appointment.planId) {
+    const Plan = (await import('../models/Plan')).default;
+    const plan = await Plan.findById(appointment.planId);
+    if (plan && plan.scheduledDate && plan.scheduledTime) {
+      const sessionDate = new Date(plan.scheduledDate);
+      const [startHour, startMin] = plan.scheduledTime.split(':').map(Number);
+      const duration = plan.duration || appointment.duration || 60;
+      const endTotalMinutes = startHour * 60 + startMin + duration;
+      const endHour = Math.floor(endTotalMinutes / 60);
+      const endMin = endTotalMinutes % 60;
+
+      const startDateTime = new Date(sessionDate);
+      startDateTime.setHours(startHour, startMin, 0, 0);
+
+      const endDateTime = new Date(sessionDate);
+      endDateTime.setHours(endHour, endMin, 0, 0);
+
+      return { startDateTime, endDateTime };
+    }
+  }
+
+  // For regular appointments, use stored date/time
   const sessionDate = new Date(appointment.sessionDate);
   const [startHour, startMin] = appointment.startTime.split(':').map(Number);
   const [endHour, endMin] = appointment.endTime.split(':').map(Number);
@@ -51,7 +74,7 @@ const buildDisplayName = (doc?: ParticipantDetails, fallback: string = 'Wellness
 
 export const notifyParticipantsOfBooking = async (appointment: PopulatedAppointment) => {
   try {
-    const { startDateTime } = getSessionDateTimes(appointment);
+    const { startDateTime } = await getSessionDateTimes(appointment);
     const tasks: Array<{ label: 'user' | 'expert'; promise: Promise<unknown> }> = [];
 
     if (appointment.user?.email) {
@@ -120,7 +143,7 @@ const notifyCustomerOfStatusChange = async (appointment: PopulatedAppointment, s
       return;
     }
 
-    const { startDateTime } = getSessionDateTimes(appointment);
+    const { startDateTime } = await getSessionDateTimes(appointment);
 
     await sendBookingStatusUpdateEmail({
       email: appointment.user.email,
@@ -571,22 +594,12 @@ export const createBooking = asyncHandler(async (req, res) => {
         });
       }
 
-      // For group sessions, check if user already has a booking for this plan, date, and time
+      // For group sessions, check if user already has a booking for this plan
       if (isGroupSession) {
-        const sessionDateTime = validatedSlot.sessionDateTime;
-        const startOfDay = new Date(sessionDateTime);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(sessionDateTime);
-        endOfDay.setHours(23, 59, 59, 999);
-
         const existingGroupBooking = await Appointment.findOne({
           user: currentUser._id,
           planId: plan._id,
-          sessionDate: {
-            $gte: startOfDay,
-            $lte: endOfDay
-          },
-          startTime: sessionPayload.startTime,
+          isDynamicGroupSession: true,
           status: { $in: ['pending', 'confirmed'] }
         });
 
@@ -600,12 +613,17 @@ export const createBooking = asyncHandler(async (req, res) => {
 
       const price = plan.price ?? Math.round(((expert.hourlyRate || 0) * finalDuration) / 60);
 
+      // For dynamic group sessions (single type, one-to-many), don't store fixed date/time
+      // Date/time will be fetched dynamically from the plan
+      const isDynamicGroupSession = isGroupSession && plan.type === 'single';
+      
       const appointment = await Appointment.create({
         user: currentUser._id,
         expert: expertId,
-        sessionDate: validatedSlot.sessionDateTime,
-        startTime: sessionPayload.startTime,
-        endTime: validatedSlot.endTime,
+        // For dynamic group sessions, don't store fixed date/time - fetch from plan dynamically
+        sessionDate: isDynamicGroupSession ? undefined : validatedSlot.sessionDateTime,
+        startTime: isDynamicGroupSession ? undefined : sessionPayload.startTime,
+        endTime: isDynamicGroupSession ? undefined : validatedSlot.endTime,
         duration: finalDuration,
         consultationMethod: sessionPayload.consultationMethod,
         sessionType: sessionPayload.sessionType,
@@ -619,8 +637,9 @@ export const createBooking = asyncHandler(async (req, res) => {
         planName: plan.name,
         planSessionNumber: 1,
         planTotalSessions: 1,
-        planPrice: price
-      });
+        planPrice: price,
+        isDynamicGroupSession: isDynamicGroupSession
+      } as any);
 
       await appointment.populate('user', 'firstName lastName email');
       await appointment.populate('expert', 'firstName lastName specialization profileImage email');
@@ -865,16 +884,41 @@ export const getUserBookings = asyncHandler(async (req, res) => {
 
   const appointments = await Appointment.find(query)
     .populate('expert', 'firstName lastName specialization profileImage hourlyRate')
+    .populate('planId', 'scheduledDate scheduledTime duration sessionFormat')
     .sort({ sessionDate: 1, startTime: 1 })
     .skip(skip)
     .limit(limitNum);
+
+  // For dynamic group sessions, populate date/time from plan
+  const appointmentsWithDynamicData = appointments.map((apt: any) => {
+    if (apt.isDynamicGroupSession && apt.planId) {
+      const plan = apt.planId;
+      if (plan.scheduledDate && plan.scheduledTime) {
+        // Calculate endTime from startTime and duration
+        const [startHour, startMin] = plan.scheduledTime.split(':').map(Number);
+        const duration = plan.duration || apt.duration || 60;
+        const endTotalMinutes = startHour * 60 + startMin + duration;
+        const endHour = Math.floor(endTotalMinutes / 60);
+        const endMin = endTotalMinutes % 60;
+        const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+        
+        apt.sessionDate = plan.scheduledDate;
+        apt.startTime = plan.scheduledTime;
+        apt.endTime = endTime;
+        if (plan.duration) {
+          apt.duration = plan.duration;
+        }
+      }
+    }
+    return apt;
+  });
 
   const total = await Appointment.countDocuments(query);
 
   res.status(200).json({
     success: true,
     data: {
-      appointments,
+      appointments: appointmentsWithDynamicData,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -927,16 +971,41 @@ export const getExpertBookings = asyncHandler(async (req, res) => {
 
   const appointments = await Appointment.find(query)
     .populate('user', 'firstName lastName email')
+    .populate('planId', 'scheduledDate scheduledTime duration sessionFormat')
     .sort({ sessionDate: 1, startTime: 1 })
     .skip(skip)
     .limit(limitNum);
+
+  // For dynamic group sessions, populate date/time from plan
+  const appointmentsWithDynamicData = appointments.map((apt: any) => {
+    if (apt.isDynamicGroupSession && apt.planId) {
+      const plan = apt.planId;
+      if (plan.scheduledDate && plan.scheduledTime) {
+        // Calculate endTime from startTime and duration
+        const [startHour, startMin] = plan.scheduledTime.split(':').map(Number);
+        const duration = plan.duration || apt.duration || 60;
+        const endTotalMinutes = startHour * 60 + startMin + duration;
+        const endHour = Math.floor(endTotalMinutes / 60);
+        const endMin = endTotalMinutes % 60;
+        const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+        
+        apt.sessionDate = plan.scheduledDate;
+        apt.startTime = plan.scheduledTime;
+        apt.endTime = endTime;
+        if (plan.duration) {
+          apt.duration = plan.duration;
+        }
+      }
+    }
+    return apt;
+  });
 
   const total = await Appointment.countDocuments(query);
 
   res.status(200).json({
     success: true,
     data: {
-      appointments,
+      appointments: appointmentsWithDynamicData,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -1280,7 +1349,10 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     });
   }
 
-  const appointment = await Appointment.findById(id).populate('user', 'firstName lastName email').populate('expert', 'firstName lastName email');
+  const appointment = await Appointment.findById(id)
+    .populate('user', 'firstName lastName email')
+    .populate('expert', 'firstName lastName email')
+    .populate('planId', 'scheduledDate scheduledTime duration sessionFormat');
 
   if (!appointment) {
     return res.status(404).json({
@@ -1324,7 +1396,7 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     });
   }
 
-  const { startDateTime, endDateTime } = getSessionDateTimes(appointment);
+  const { startDateTime, endDateTime } = await getSessionDateTimes(appointment);
   const joinWindowMinutes = Math.min(Math.max(ENV.AGORA_JOIN_WINDOW_MINUTES || 2, 0), 2);
   const joinWindowMillis = joinWindowMinutes * 60 * 1000;
   const now = new Date();
@@ -1348,6 +1420,8 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     if (appointment.sessionType === 'one-to-many') {
       // For group sessions, use shared channel
       const groupSessionId = (appointment as any).groupSessionId;
+      const isDynamicGroupSession = (appointment as any).isDynamicGroupSession;
+      
       if (groupSessionId) {
         // Monthly group session created by expert
         appointment.agoraChannelName = `group_${groupSessionId}`;
@@ -1356,11 +1430,23 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
           { groupSessionId: groupSessionId },
           { agoraChannelName: appointment.agoraChannelName }
         );
+      } else if (appointment.planId && isDynamicGroupSession) {
+        // Dynamic group session plan - use planId only (not date/time since it can change)
+        appointment.agoraChannelName = `group_plan_${appointment.planId.toString()}`;
+        // Update all appointments for this plan to use the same channel
+        await Appointment.updateMany(
+          {
+            planId: appointment.planId,
+            isDynamicGroupSession: true,
+            sessionType: 'one-to-many'
+          },
+          { agoraChannelName: appointment.agoraChannelName }
+        );
       } else if (appointment.planId) {
-        // Single group session plan - use planId + date + time
+        // Legacy: Single group session plan with fixed date/time
         const sessionDate = new Date(appointment.sessionDate);
         const dateStr = sessionDate.toISOString().split('T')[0].replace(/-/g, '');
-        const timeStr = appointment.startTime.replace(':', '');
+        const timeStr = appointment.startTime?.replace(':', '') || '';
         appointment.agoraChannelName = `group_plan_${appointment.planId.toString()}_${dateStr}_${timeStr}`;
         // Update all appointments for this plan/date/time to use the same channel
         const startOfDay = new Date(sessionDate);
@@ -1386,14 +1472,26 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
   } else if (appointment.sessionType === 'one-to-many') {
     // If channel name exists but this is a group session, ensure all participants use the same channel
     const groupSessionId = (appointment as any).groupSessionId;
+    const isDynamicGroupSession = (appointment as any).isDynamicGroupSession;
+    
     if (groupSessionId) {
       // Update all appointments in this group to use the same channel
       await Appointment.updateMany(
         { groupSessionId: groupSessionId },
         { agoraChannelName: appointment.agoraChannelName }
       );
+    } else if (appointment.planId && isDynamicGroupSession) {
+      // For dynamic group sessions, ensure all appointments for same plan use same channel
+      await Appointment.updateMany(
+        {
+          planId: appointment.planId,
+          isDynamicGroupSession: true,
+          sessionType: 'one-to-many'
+        },
+        { agoraChannelName: appointment.agoraChannelName }
+      );
     } else if (appointment.planId) {
-      // For single group session plans, ensure all appointments for same plan/date/time use same channel
+      // Legacy: For single group session plans with fixed date/time, ensure all appointments for same plan/date/time use same channel
       const sessionDate = new Date(appointment.sessionDate);
       const startOfDay = new Date(sessionDate);
       startOfDay.setHours(0, 0, 0, 0);

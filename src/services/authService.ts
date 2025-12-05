@@ -153,6 +153,7 @@ class AuthService implements IAuthService {
       password: pendingRegistration.password,
       dateOfBirth: pendingRegistration.dateOfBirth,
       gender: pendingRegistration.gender,
+      bloodGroup: null, // Explicitly set to null to avoid enum validation errors
       userType: 'user',
       isEmailVerified: true, // Verified via OTP
       isPhoneVerified: true,

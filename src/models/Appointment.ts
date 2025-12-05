@@ -25,6 +25,7 @@ export interface IAppointment extends Document {
   cancellationReason?: string;
   agoraChannelName?: string;
   groupSessionId?: string; // For grouping appointments in the same group session
+  isDynamicGroupSession?: boolean; // Flag to indicate this is a dynamic group session that references plan for date/time
   feedbackRating?: number;
   feedbackComment?: string;
   feedbackSubmittedAt?: Date;
@@ -56,18 +57,18 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
     required: [true, 'Expert is required']
   },
   sessionDate: {
-    type: Date,
-    required: [true, 'Session date is required']
+    type: Date
+    // Not required for dynamic group sessions (will be fetched from plan)
   },
   startTime: {
     type: String,
-    required: [true, 'Start time is required'],
     match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format. Use HH:MM format']
+    // Not required for dynamic group sessions (will be fetched from plan)
   },
   endTime: {
     type: String,
-    required: [true, 'End time is required'],
     match: [/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format. Use HH:MM format']
+    // Not required for dynamic group sessions (will be fetched from plan)
   },
   duration: {
     type: Number,
@@ -151,6 +152,11 @@ const appointmentSchema = new mongoose.Schema<IAppointment, AppointmentModel>({
     type: String,
     index: true
   },
+  // Flag to indicate this is a dynamic group session that references plan for date/time
+  isDynamicGroupSession: {
+    type: Boolean,
+    default: false
+  },
   feedbackRating: {
     type: Number,
     min: [1, 'Rating must be at least 1'],
@@ -201,13 +207,23 @@ appointmentSchema.index({ status: 1 });
 appointmentSchema.index({ sessionDate: 1, startTime: 1, endTime: 1 });
 appointmentSchema.index({ planId: 1 });
 
-// Pre-save validation: ensure end time is after start time
+// Pre-save validation: ensure end time is after start time (skip for dynamic group sessions)
 appointmentSchema.pre('save', function(next) {
+  // Skip validation for dynamic group sessions (date/time comes from plan)
+  if ((this as any).isDynamicGroupSession) {
+    return next();
+  }
+
   if (
     !this.isModified('startTime') &&
     !this.isModified('endTime') &&
     !this.isModified('duration')
   ) {
+    return next();
+  }
+
+  // Skip if startTime or endTime are not set (dynamic group session)
+  if (!this.startTime || !this.endTime) {
     return next();
   }
 
@@ -238,11 +254,16 @@ appointmentSchema.pre('save', function(next) {
         // Monthly group session created by expert - use groupSessionId
         this.agoraChannelName = `group_${(this as any).groupSessionId}`;
       } else if (this.planId) {
-        // Single group session plan - use planId + date + time for shared channel
-        const sessionDate = new Date(this.sessionDate);
-        const dateStr = sessionDate.toISOString().split('T')[0].replace(/-/g, '');
-        const timeStr = this.startTime.replace(':', '');
-        this.agoraChannelName = `group_plan_${this.planId.toString()}_${dateStr}_${timeStr}`;
+        // For dynamic group sessions, use planId only (not date/time since it can change)
+        if ((this as any).isDynamicGroupSession) {
+          this.agoraChannelName = `group_plan_${this.planId.toString()}`;
+        } else {
+          // Legacy: Single group session plan with fixed date/time
+          const sessionDate = new Date(this.sessionDate);
+          const dateStr = sessionDate.toISOString().split('T')[0].replace(/-/g, '');
+          const timeStr = this.startTime?.replace(':', '') || '';
+          this.agoraChannelName = `group_plan_${this.planId.toString()}_${dateStr}_${timeStr}`;
+        }
       } else {
         // Fallback to appointment ID (shouldn't happen for group sessions)
         this.agoraChannelName = `booking_${this._id.toString()}`;
