@@ -1400,18 +1400,27 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
   const joinWindowMinutes = Math.min(Math.max(ENV.AGORA_JOIN_WINDOW_MINUTES || 2, 0), 2);
   const joinWindowMillis = joinWindowMinutes * 60 * 1000;
   const now = new Date();
+  const nowTime = now.getTime();
+  const startTime = startDateTime.getTime();
+  const endTime = endDateTime.getTime();
 
-  if (now.getTime() < startDateTime.getTime() - joinWindowMillis) {
-    return res.status(400).json({
-      success: false,
-      message: `You can join this session ${joinWindowMinutes} minutes before the scheduled start time`
-    });
-  }
-
-  if (now.getTime() > endDateTime.getTime()) {
+  // Check if session has ended
+  if (nowTime > endTime) {
     return res.status(400).json({
       success: false,
       message: 'This session has already ended'
+    });
+  }
+
+  // Allow joining if:
+  // 1. Current time is within the join window (2 minutes before start), OR
+  // 2. Session has already started (current time >= start time)
+  const earliestJoinTime = startTime - joinWindowMillis;
+  // Only block if we're too early (before join window) AND session hasn't started yet
+  if (nowTime < earliestJoinTime && nowTime < startTime) {
+    return res.status(400).json({
+      success: false,
+      message: `You can join this session ${joinWindowMinutes} minutes before the scheduled start time`
     });
   }
 
