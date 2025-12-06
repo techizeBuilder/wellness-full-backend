@@ -5,6 +5,24 @@ import ApiResponse from '../utils/response';
 import { MESSAGES } from '../constants/messages';
 import userService from '../services/userService';
 import { AuthResult } from '../types/services.interfaces';
+import { getFileUrl, deleteFile } from '../middlewares/upload';
+import path from 'path';
+
+// Helper function to normalize profile image path to just filename
+const normalizeProfileImagePath = (imagePath: string | null | undefined): string | null => {
+  if (!imagePath) return null;
+  
+  // If it's already just a filename (no path separators), return as is
+  if (!imagePath.includes('/') && !imagePath.includes('\\')) {
+    return imagePath;
+  }
+  
+  // Extract filename from path
+  const normalized = imagePath.replace(/\\/g, '/');
+  const filename = normalized.split('/').pop() || null;
+  
+  return filename;
+};
 
 // @desc    Register user (sends OTP)
 // @route   POST /api/auth/register
@@ -84,13 +102,25 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response) =
   // If user is an Expert (regular expert, not Google OAuth), return it directly
   // The protect middleware already validated and loaded the user
   if (currentUser.constructor.modelName === 'Expert') {
-    return ApiResponse.success(res, { user: currentUser.toObject() });
+    const expertObj = currentUser.toObject();
+    // Ensure profile image URL is properly formatted
+    if (expertObj.profileImage) {
+      expertObj.profileImage = getFileUrl(normalizeProfileImagePath(expertObj.profileImage), 'profiles');
+    }
+    return ApiResponse.success(res, { user: expertObj });
   }
   
   // For User model (regular users or Google OAuth experts), use userService
   // This ensures consistent response format and any additional processing
   const user = await userService.getCurrentUser(currentUser._id);
-  return ApiResponse.success(res, { user });
+  const userObj = user.toObject ? user.toObject() : user;
+  
+  // Normalize and format profile image URL
+  if (userObj.profileImage) {
+    userObj.profileImage = getFileUrl(normalizeProfileImagePath(userObj.profileImage), 'profiles');
+  }
+  
+  return ApiResponse.success(res, { user: userObj });
 });
 
 // @desc    Send OTP
@@ -153,11 +183,29 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
 // @access  Private
 export const updateProfile = asyncHandler(async (req: Request, res: Response) => {
   const updateData: any = { ...req.body };
+  const currentUser = (req as any).user;
+  
   if ((req as any).file) {
-    updateData.profileImage = (req as any).file.path;
+    // Delete old profile image if it exists
+    if (currentUser.profileImage) {
+      const oldImagePath = normalizeProfileImagePath(currentUser.profileImage);
+      if (oldImagePath) {
+        deleteFile(path.join(__dirname, '..', 'uploads', 'profiles', oldImagePath));
+      }
+    }
+    // Store just the filename, not the full path
+    updateData.profileImage = (req as any).file.filename;
   }
-  const user = await userService.updateProfile((req as any).user._id, updateData);
-  return ApiResponse.success(res, { user }, MESSAGES.USER.PROFILE_UPDATED);
+  
+  const user = await userService.updateProfile(currentUser._id, updateData);
+  const userObj = user.toObject ? user.toObject() : user;
+  
+  // Format profile image URL for response
+  if (userObj.profileImage) {
+    userObj.profileImage = getFileUrl(normalizeProfileImagePath(userObj.profileImage), 'profiles');
+  }
+  
+  return ApiResponse.success(res, { user: userObj }, MESSAGES.USER.PROFILE_UPDATED);
 });
 
 // @desc    Request password reset OTP (for logged-in users)

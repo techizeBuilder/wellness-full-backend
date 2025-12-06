@@ -169,10 +169,31 @@ export const deleteFile = (filePath: string): boolean => {
   }
 };
 
+// Helper function to normalize filename (extract just filename from path)
+const normalizeFilename = (filePath: string | null | undefined): string | null => {
+  if (!filePath) return null;
+  
+  // If it's already just a filename (no path separators), return as is
+  if (!filePath.includes('/') && !filePath.includes('\\')) {
+    return filePath;
+  }
+  
+  // Extract filename from path
+  const normalized = filePath.replace(/\\/g, '/');
+  const filename = normalized.split('/').pop() || null;
+  
+  return filename;
+};
+
 // Helper function to get file URL
 export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' = 'profiles') => {
   if (!filename) return null;
-  return `/uploads/${type}/${filename}`;
+  
+  // Normalize filename to handle cases where full path might be stored
+  const normalizedFilename = normalizeFilename(filename);
+  if (!normalizedFilename) return null;
+  
+  return `/uploads/${type}/${normalizedFilename}`;
 };
 
 // Helper function to get absolute file path
