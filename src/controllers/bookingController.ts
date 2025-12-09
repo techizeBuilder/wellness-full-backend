@@ -23,6 +23,9 @@ type PopulatedAppointment = IAppointment & {
 };
 
 const getSessionDateTimes = async (appointment: IAppointment) => {
+  // IST offset: UTC+5:30 = 5.5 hours = 330 minutes
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  
   // For dynamic group sessions, fetch date/time from plan
   if ((appointment as any).isDynamicGroupSession && appointment.planId) {
     const Plan = (await import('../models/Plan')).default;
@@ -35,15 +38,19 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
       const endHour = Math.floor(endTotalMinutes / 60);
       const endMin = endTotalMinutes % 60;
 
-      // Extract date components to create a new date with the time
-      // This ensures we use the date part without timezone shifts
-      const year = sessionDate.getFullYear();
-      const month = sessionDate.getMonth();
-      const day = sessionDate.getDate();
+      // Extract date components (interpret in IST)
+      const year = sessionDate.getUTCFullYear();
+      const month = sessionDate.getUTCMonth();
+      const day = sessionDate.getUTCDate();
       
-      // Create date in local timezone (times are stored as local time)
-      const startDateTime = new Date(year, month, day, startHour, startMin, 0, 0);
-      const endDateTime = new Date(year, month, day, endHour, endMin, 0, 0);
+      // Create date assuming times are in IST, then convert to UTC for comparison
+      // Create in UTC first, then subtract IST offset to get the correct UTC time
+      const startDateTimeIST = new Date(Date.UTC(year, month, day, startHour, startMin, 0, 0));
+      const endDateTimeIST = new Date(Date.UTC(year, month, day, endHour, endMin, 0, 0));
+      
+      // Convert IST to UTC by subtracting the offset
+      const startDateTime = new Date(startDateTimeIST.getTime() - IST_OFFSET_MS);
+      const endDateTime = new Date(endDateTimeIST.getTime() - IST_OFFSET_MS);
 
       return { startDateTime, endDateTime };
     }
@@ -54,15 +61,18 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
   const [startHour, startMin] = appointment.startTime.split(':').map(Number);
   const [endHour, endMin] = appointment.endTime.split(':').map(Number);
 
-  // Extract date components to create a new date with the time
-  // This ensures we use the date part without timezone shifts
-  const year = sessionDate.getFullYear();
-  const month = sessionDate.getMonth();
-  const day = sessionDate.getDate();
+  // Extract date components (interpret in IST)
+  const year = sessionDate.getUTCFullYear();
+  const month = sessionDate.getUTCMonth();
+  const day = sessionDate.getUTCDate();
   
-  // Create date in local timezone (times are stored as local time)
-  const startDateTime = new Date(year, month, day, startHour, startMin, 0, 0);
-  const endDateTime = new Date(year, month, day, endHour, endMin, 0, 0);
+  // Create date assuming times are in IST, then convert to UTC for comparison
+  const startDateTimeIST = new Date(Date.UTC(year, month, day, startHour, startMin, 0, 0));
+  const endDateTimeIST = new Date(Date.UTC(year, month, day, endHour, endMin, 0, 0));
+  
+  // Convert IST to UTC by subtracting the offset
+  const startDateTime = new Date(startDateTimeIST.getTime() - IST_OFFSET_MS);
+  const endDateTime = new Date(endDateTimeIST.getTime() - IST_OFFSET_MS);
 
   return { startDateTime, endDateTime };
 };
