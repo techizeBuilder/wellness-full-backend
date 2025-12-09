@@ -35,11 +35,15 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
       const endHour = Math.floor(endTotalMinutes / 60);
       const endMin = endTotalMinutes % 60;
 
-      const startDateTime = new Date(sessionDate);
-      startDateTime.setHours(startHour, startMin, 0, 0);
-
-      const endDateTime = new Date(sessionDate);
-      endDateTime.setHours(endHour, endMin, 0, 0);
+      // Extract date components to create a new date with the time
+      // This ensures we use the date part without timezone shifts
+      const year = sessionDate.getFullYear();
+      const month = sessionDate.getMonth();
+      const day = sessionDate.getDate();
+      
+      // Create date in local timezone (times are stored as local time)
+      const startDateTime = new Date(year, month, day, startHour, startMin, 0, 0);
+      const endDateTime = new Date(year, month, day, endHour, endMin, 0, 0);
 
       return { startDateTime, endDateTime };
     }
@@ -50,11 +54,15 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
   const [startHour, startMin] = appointment.startTime.split(':').map(Number);
   const [endHour, endMin] = appointment.endTime.split(':').map(Number);
 
-  const startDateTime = new Date(sessionDate);
-  startDateTime.setHours(startHour, startMin, 0, 0);
-
-  const endDateTime = new Date(sessionDate);
-  endDateTime.setHours(endHour, endMin, 0, 0);
+  // Extract date components to create a new date with the time
+  // This ensures we use the date part without timezone shifts
+  const year = sessionDate.getFullYear();
+  const month = sessionDate.getMonth();
+  const day = sessionDate.getDate();
+  
+  // Create date in local timezone (times are stored as local time)
+  const startDateTime = new Date(year, month, day, startHour, startMin, 0, 0);
+  const endDateTime = new Date(year, month, day, endHour, endMin, 0, 0);
 
   return { startDateTime, endDateTime };
 };
