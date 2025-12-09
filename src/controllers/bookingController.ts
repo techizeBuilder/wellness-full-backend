@@ -1412,16 +1412,18 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     });
   }
 
-  // Allow joining if:
-  // 1. Current time is within the join window (2 minutes before start), OR
-  // 2. Session has already started (current time >= start time)
-  const earliestJoinTime = startTime - joinWindowMillis;
-  // Only block if we're too early (before join window) AND session hasn't started yet
-  if (nowTime < earliestJoinTime && nowTime < startTime) {
-    return res.status(400).json({
-      success: false,
-      message: `You can join this session ${joinWindowMinutes} minutes before the scheduled start time`
-    });
+  // Allow joining if session has already started (regardless of join window)
+  if (nowTime >= startTime) {
+    // Session has started - allow joining
+  } else {
+    // Session hasn't started yet - check if within join window
+    const earliestJoinTime = startTime - joinWindowMillis;
+    if (nowTime < earliestJoinTime) {
+      return res.status(400).json({
+        success: false,
+        message: `You can join this session ${joinWindowMinutes} minutes before the scheduled start time`
+      });
+    }
   }
 
   // Ensure agoraChannelName is set, and for group sessions, ensure shared channel
