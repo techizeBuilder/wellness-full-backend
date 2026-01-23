@@ -110,18 +110,19 @@ export const uploadPrescription = multer({
   }
 }).single('prescription');
 
-// Certificate storage (PDF only)
+// Certificate storage (PDF, JPG, PNG)
 const certificateStorage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, path.join(__dirname, '..', 'uploads/documents'));
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `certificate-${uniqueSuffix}.pdf`);
+    const extension = path.extname(file.originalname) || '.pdf';
+    cb(null, `certificate-${uniqueSuffix}${extension}`);
   }
 });
 
-const certificateFileFilter = createFileFilter(['pdf']);
+const certificateFileFilter = createFileFilter(['pdf', 'jpg', 'jpeg', 'png']);
 
 export const uploadCertificates = multer({
   storage: certificateStorage,
@@ -130,6 +131,55 @@ export const uploadCertificates = multer({
     fileSize: parseInt(process.env.MAX_FILE_SIZE || '5242880', 10) // 5MB default
   }
 }).array('certificates', 3); // Max 3 certificates
+
+// Combined file filter for expert registration (profile image + certificates)
+const expertRegistrationFileFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+) => {
+  if (file.fieldname === 'profileImage') {
+    return imageFileFilter(req, file, cb);
+  } else if (file.fieldname === 'certificates') {
+    return certificateFileFilter(req, file, cb);
+  }
+  cb(new Error(`Unexpected field name: ${file.fieldname}`));
+};
+
+// Combined upload for expert registration: profile image + certificates
+// Use different storage for certificates
+const expertRegistrationStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    if (file.fieldname === 'profileImage') {
+      cb(null, path.join(__dirname, '..', 'uploads/profiles'));
+    } else if (file.fieldname === 'certificates') {
+      cb(null, path.join(__dirname, '..', 'uploads/documents'));
+    } else {
+      cb(new Error(`Unexpected field name: ${file.fieldname}`), '');
+    }
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    if (file.fieldname === 'profileImage') {
+      const extension = path.extname(file.originalname);
+      cb(null, `profile-${uniqueSuffix}${extension}`);
+    } else if (file.fieldname === 'certificates') {
+      const extension = path.extname(file.originalname) || '.pdf';
+      cb(null, `certificate-${uniqueSuffix}${extension}`);
+    } else {
+      cb(new Error(`Unexpected field name: ${file.fieldname}`), '');
+    }
+  }
+});
+
+export const uploadExpertRegistration = multer({
+  storage: expertRegistrationStorage,
+  fileFilter: expertRegistrationFileFilter,
+  limits: limits
+}).fields([
+  { name: 'profileImage', maxCount: 1 },
+  { name: 'certificates', maxCount: 3 }
+]);
 
 // Error handling middleware for multer
 export const handleUploadError = (error: any, req: Request, res: Response, next: NextFunction) => {

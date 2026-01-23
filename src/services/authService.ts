@@ -1,6 +1,6 @@
 import userRepository from '../repositories/userRepository';
 import expertRepository from '../repositories/expertRepository';
-import { checkEmailExists, checkPhoneExists } from '../utils/emailValidation';
+import { checkEmailExists, checkPhoneExists, validateEmailStrict } from '../utils/emailValidation';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import emailService from './emailService';
 import { MESSAGES } from '../constants/messages';
@@ -20,14 +20,29 @@ class AuthService implements IAuthService {
       throw new Error('Email service is not configured. Please contact support.');
     }
     
+    // Strict email validation
+    const emailValidation = validateEmailStrict(email);
+    if (!emailValidation.isValid) {
+      throw new Error(emailValidation.error || 'Please enter a valid email address');
+    }
+    
     // Check if email already exists as a verified user or expert
     const emailCheck = await checkEmailExists(email);
     if (emailCheck.exists) {
       throw new Error(emailCheck.message);
     }
 
+    // Phone validation - normalize and validate
+    const normalizedPhone = String(phone || '').replace(/\D/g, '');
+    if (!/^\d{10}$/.test(normalizedPhone)) {
+      throw new Error('Phone number must be exactly 10 digits');
+    }
+    if (/^(\d)\1{9}$/.test(normalizedPhone)) {
+      throw new Error('Phone number cannot have all digits the same');
+    }
+
     // Check if phone exists
-    const phoneCheck = await checkPhoneExists(phone);
+    const phoneCheck = await checkPhoneExists(normalizedPhone);
     if (phoneCheck.exists) {
       throw new Error(phoneCheck.message);
     }
@@ -44,7 +59,7 @@ class AuthService implements IAuthService {
       // Update the pending registration with new data and generate new OTP
       pendingRegistration.firstName = firstName;
       pendingRegistration.lastName = lastName || firstName;
-      pendingRegistration.phone = phone;
+      pendingRegistration.phone = finalPhone;
       pendingRegistration.password = password;
       pendingRegistration.dateOfBirth = dateOfBirth;
       pendingRegistration.gender = gender;
@@ -79,7 +94,7 @@ class AuthService implements IAuthService {
       firstName,
       lastName: finalLastName,
       email,
-      phone,
+      phone: finalPhone,
       password,
       dateOfBirth,
       gender,

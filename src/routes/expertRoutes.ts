@@ -21,7 +21,7 @@ import {
   deleteCertificate
 } from '../controllers/expertController';
 import { protect, authorize, optionalAuth } from '../middlewares/auth';
-import { uploadProfileImage, uploadCertificates as uploadCertificatesMiddleware, handleUploadError } from '../middlewares/upload';
+import { uploadProfileImage, uploadCertificates as uploadCertificatesMiddleware, uploadExpertRegistration, handleUploadError } from '../middlewares/upload';
 import {
   expertRegisterSchema,
   loginSchema,
@@ -60,8 +60,8 @@ const otpLimiter = rateLimit({
 // Get all experts (for browsing)
 router.get('/', getExperts);
 
-// Expert registration with image upload
-router.post('/register', authLimiter, uploadProfileImage, handleUploadError, validate(expertRegisterSchema), registerExpert);
+// Expert registration with profile image and certificates upload
+router.post('/register', authLimiter, uploadExpertRegistration, handleUploadError, validate(expertRegisterSchema), registerExpert);
 
 router.post('/login', authLimiter, validate(loginSchema), loginExpert);
 

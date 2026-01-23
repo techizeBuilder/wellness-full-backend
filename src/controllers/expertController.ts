@@ -61,12 +61,48 @@ const registerExpert = asyncHandler(async (req, res) => {
   console.log('password:', password, 'type:', typeof password, 'valid:', !!password);
   console.log('specialization:', specialization, 'type:', typeof specialization, 'valid:', !!specialization);
 
+  // Normalize and validate phone number (healthcare-grade, reject obvious fakes)
+  const normalizedPhone = String(phone || '').replace(/\D/g, '');
+  if (!/^\d{10}$/.test(normalizedPhone)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Phone number must be exactly 10 digits'
+    });
+  }
+  if (/^(\d)\1{9}$/.test(normalizedPhone)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Phone number cannot have all digits the same'
+    });
+  }
+
+  // Full Name validation - max 50 characters total, only letters/space/underscore
+  const fullNameLength = (firstName || '').length + (lastName || '').length;
+  if (fullNameLength > 50) {
+    return res.status(400).json({
+      success: false,
+      message: 'Full Name cannot exceed 50 characters'
+    });
+  }
+  if (firstName && !/^[a-zA-Z\s_]+$/.test(firstName.trim())) {
+    return res.status(400).json({
+      success: false,
+      message: 'Full Name can only contain letters, spaces, and underscores'
+    });
+  }
+  if (lastName && !/^[a-zA-Z\s_]+$/.test(lastName.trim())) {
+    return res.status(400).json({
+      success: false,
+      message: 'Full Name can only contain letters, spaces, and underscores'
+    });
+  }
+
   // Input validation - only require essential fields
   if (!firstName || !email || !phone || !password || !specialization) {
     console.log('Validation error: Missing required fields');
     const missingFields = [];
-    if (!firstName) missingFields.push('firstName');
-    if (!lastName) missingFields.push('lastName');
+    if (!firstName) missingFields.push('Full Name (first name)');
+    if (!lastName) missingFields.push('Full Name (last name)');
     if (!email) missingFields.push('email');
     if (!phone) missingFields.push('phone');
     if (!password) missingFields.push('password');
@@ -78,11 +114,35 @@ const registerExpert = asyncHandler(async (req, res) => {
     });
   }
 
+  // Strict email validation
+  const { validateEmailStrict } = require('../utils/emailValidation');
+  const emailValidation = validateEmailStrict(email);
+  if (!emailValidation.isValid) {
+    return res.status(400).json({
+      success: false,
+      message: emailValidation.error || 'Please enter a valid email address'
+    });
+  }
+
+  // Password length validation
+  if (password.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 6 characters long'
+    });
+  }
+  if (password.length > 128) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password cannot exceed 128 characters'
+    });
+  }
+
   console.log('Processing expert registration for:', { 
     firstName, 
     lastName: lastName || firstName, 
     email, 
-    phone, 
+    phone: normalizedPhone, 
     specialization 
   });
 
@@ -97,7 +157,7 @@ const registerExpert = asyncHandler(async (req, res) => {
   }
 
   // Check if phone already exists in either User or Expert collection
-  const phoneCheck = await checkPhoneExists(phone);
+  const phoneCheck = await checkPhoneExists(normalizedPhone);
   if (phoneCheck.exists) {
     console.log('Phone already exists:', phoneCheck.collection);
     return res.status(400).json({
@@ -107,12 +167,55 @@ const registerExpert = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Handle profile image
+    // Handle profile image and certificates from multipart form
     let profileImage = null;
-    if (req.file) {
-      profileImage = req.file.filename;
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+    
+    if (files?.profileImage && files.profileImage.length > 0) {
+      profileImage = files.profileImage[0].filename;
       console.log('Profile image uploaded:', profileImage);
     }
+    
+    // Validate and handle certificates (MANDATORY for expert registration)
+    const certificateFiles = files?.certificates || [];
+    if (certificateFiles.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one certification document is required for expert registration'
+      });
+    }
+    
+    // Validate certificate file types and sizes
+    const allowedMimeTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+    const invalidFiles = certificateFiles.filter(file => {
+      const mimeType = (file.mimetype || '').toLowerCase();
+      const ext = (file.originalname || '').toLowerCase().slice(((file.originalname || '').lastIndexOf('.')) >>> 0);
+      const isAllowedMime = allowedMimeTypes.includes(mimeType);
+      const isAllowedExt = allowedExtensions.includes(ext as any);
+      return !(isAllowedMime || isAllowedExt);
+    });
+    
+    if (invalidFiles.length > 0) {
+      // Delete invalid files
+      certificateFiles.forEach(file => {
+        const filePath = getFilePath(file.filename, 'documents');
+        if (filePath) deleteFile(filePath);
+      });
+      return res.status(400).json({
+        success: false,
+        message: 'Only PDF, JPG, and PNG files are allowed for certificates. Maximum file size is 5 MB per file.'
+      });
+    }
+    
+    // Prepare certificate data
+    const certificates = certificateFiles.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      uploadDate: new Date()
+    }));
+    
+    console.log(`Certificates uploaded: ${certificates.length} file(s)`);
 
     // Parse JSON fields safely
     let parsedQualifications = [];
@@ -173,16 +276,17 @@ const registerExpert = asyncHandler(async (req, res) => {
       firstName,
       lastName: lastName || firstName,
       email,
-      phone,
+      phone: normalizedPhone,
       password,
       specialization,
       experience: experience ? parseInt(experience) : 0,
       bio: bio || '',
       hourlyRate: hourlyRate ? parseFloat(hourlyRate) : undefined,
       profileImage,
+      certificates, // Add certificates to expert data
       userType: 'expert',
-      verificationStatus: 'approved',
-      isEmailVerified: true,
+      verificationStatus: 'pending', // Set to pending until email verification
+      isEmailVerified: false, // MUST verify email before accessing dashboard
       isPhoneVerified: true,
       // Only add these arrays if they have valid content
       ...(parsedQualifications.length > 0 && { qualifications: parsedQualifications }),
@@ -196,33 +300,42 @@ const registerExpert = asyncHandler(async (req, res) => {
 
     console.log('Expert created successfully:', expert._id);
 
-    // Skip OTP generation and email sending for immediate login
-    console.log('Skipping OTP - allowing immediate login');
+    // Generate and send OTP for email verification (REQUIRED - no immediate login)
+    const otp = expert.generateOTP();
+    await expert.save();
+    
+    console.log('OTP generated for expert registration:', otp);
+    
+    // Send OTP email
+    const emailResult = await sendOTPEmail(email, otp, expert.firstName, 'verification');
+    if (!emailResult.success) {
+      console.error('Failed to send OTP email:', emailResult.error);
+      // Delete expert if email fails
+      await Expert.findByIdAndDelete(expert._id);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send verification email. Please try again later.'
+      });
+    }
+    
+    console.log('OTP email sent successfully to:', email);
 
-    // Generate tokens for immediate login
-    const token = generateToken(expert._id.toString(), expert.userType);
-    const refreshToken = generateRefreshToken(expert._id.toString(), expert.userType);
-
-    console.log('Tokens generated successfully');
-
-    // Remove password from response and add profile image URL
+    // DO NOT generate tokens - expert must verify email first
+    // Remove password from response
     expert.password = undefined;
     if (expert.profileImage) {
       expert.profileImage = getFileUrl(expert.profileImage, 'profiles');
     }
 
-    console.log('Expert registration completed successfully');
+    console.log('Expert registration completed - email verification required');
 
     res.status(201).json({
       success: true,
-      message: 'Expert registered successfully. You are now logged in.',
+      message: 'Expert registration successful. Please verify your email address using the OTP sent to your email.',
       data: {
-        user: expert,
-        userType: 'expert',
-        accountType: 'Expert',
-        token,
-        refreshToken,
-        canLoginImmediately: true
+        email: expert.email,
+        requiresVerification: true,
+        verificationType: 'email'
       }
     });
   } catch (error) {
@@ -503,7 +616,7 @@ const sendOTP = asyncHandler(async (req, res) => {
   const otp = expert.generateOTP();
   await expert.save();
 
-  // Send OTP email
+  // Send OTP email (signature: email, otp, firstName, type, resetUrl)
   const emailResult = await sendOTPEmail(email, otp, expert.firstName);
 
   if (!emailResult.success) {
@@ -547,14 +660,32 @@ const verifyOTP = asyncHandler(async (req, res) => {
 
   // Mark email as verified
   expert.isEmailVerified = true;
+  expert.verificationStatus = 'approved'; // Approve after email verification
   await expert.save();
+
+  // Generate tokens for login after email verification
+  const token = generateToken(expert._id.toString(), expert.userType);
+  const refreshToken = generateRefreshToken(expert._id.toString(), expert.userType);
 
   // Send welcome email
   await sendWelcomeEmail(expert.email, expert.firstName, expert.userType as 'user' | 'expert');
 
+  // Remove password from response
+  expert.password = undefined;
+  if (expert.profileImage) {
+    expert.profileImage = getFileUrl(expert.profileImage, 'profiles');
+  }
+
   res.status(200).json({
     success: true,
-    message: 'Email verified successfully'
+    message: 'Email verified successfully',
+    data: {
+      user: expert,
+      userType: 'expert',
+      accountType: 'Expert',
+      token,
+      refreshToken
+    }
   });
 });
 
@@ -1287,18 +1418,26 @@ const uploadCertificates = asyncHandler(async (req, res) => {
     });
   }
 
-  // Validate all files are PDFs
-  const invalidFiles = files.filter(file => !file.mimetype.includes('pdf'));
+  // Validate all files are allowed types (PDF, JPG, PNG)
+  const allowedMimeTypes = ['application/pdf', 'image/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+  const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png'];
+  const invalidFiles = files.filter(file => {
+    const mimeType = (file.mimetype || '').toLowerCase();
+    const ext = (file.originalname || '').toLowerCase().slice(((file.originalname || '').lastIndexOf('.')) >>> 0);
+    const isAllowedMime = allowedMimeTypes.includes(mimeType);
+    const isAllowedExt = allowedExtensions.includes(ext as any);
+    return !(isAllowedMime || isAllowedExt);
+  });
   if (invalidFiles.length > 0) {
     // Delete invalid files
     files.forEach(file => {
       const filePath = getFilePath(file.filename, 'documents');
       if (filePath) deleteFile(filePath);
     });
-    return res.status(400).json({
-      success: false,
-      message: 'Only PDF files are allowed for certificates'
-    });
+      return res.status(400).json({
+        success: false,
+        message: 'Only PDF, JPG, and PNG files are allowed for certificates. Maximum file size is 5 MB per file.'
+      });
   }
 
   // Add certificates to expert

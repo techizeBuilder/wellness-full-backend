@@ -1,5 +1,6 @@
 import Joi, { ObjectSchema } from 'joi';
 import { Request, Response, NextFunction } from 'express';
+import { validateEmailStrict } from './emailValidation';
 
 export const userRegisterSchema = Joi.object({
   firstName: Joi.string().trim().min(2).max(50).required().messages({
@@ -20,8 +21,9 @@ export const userRegisterSchema = Joi.object({
     'string.pattern.base': 'Phone number must be exactly 10 digits',
     'string.empty': 'Phone number is required'
   }),
-  password: Joi.string().min(6).required().messages({
+  password: Joi.string().min(6).max(128).required().messages({
     'string.min': 'Password must be at least 6 characters long',
+    'string.max': 'Password cannot exceed 128 characters',
     'string.empty': 'Password is required'
   }),
   dateOfBirth: Joi.date().max('now').optional(),
@@ -29,13 +31,17 @@ export const userRegisterSchema = Joi.object({
 });
 
 export const expertRegisterSchema = Joi.object({
-  firstName: Joi.string().trim().min(2).max(50).required().messages({
+  firstName: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z\s_]+$/).required().messages({
     'string.empty': 'First name is required',
-    'string.min': 'First name must be at least 2 characters long'
+    'string.min': 'First name must be at least 2 characters long',
+    'string.max': 'First name cannot exceed 50 characters',
+    'string.pattern.base': 'First name can only contain letters, spaces, and underscores'
   }),
-  lastName: Joi.string().trim().min(2).max(50).required().messages({
+  lastName: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z\s_]+$/).required().messages({
     'string.empty': 'Last name is required',
-    'string.min': 'Last name must be at least 2 characters long'
+    'string.min': 'Last name must be at least 2 characters long',
+    'string.max': 'Last name cannot exceed 50 characters',
+    'string.pattern.base': 'Last name can only contain letters, spaces, and underscores'
   }),
   email: Joi.string().email({ tlds: { allow: false } }).required().messages({
     'string.email': 'Please enter a valid email address',
@@ -45,8 +51,9 @@ export const expertRegisterSchema = Joi.object({
     'string.pattern.base': 'Phone number must be exactly 10 digits',
     'string.empty': 'Phone number is required'
   }),
-  password: Joi.string().min(6).required().messages({
+  password: Joi.string().min(6).max(128).required().messages({
     'string.min': 'Password must be at least 6 characters long',
+    'string.max': 'Password cannot exceed 128 characters',
     'string.empty': 'Password is required'
   }),
   specialization: Joi.string().trim().min(2).max(100).required().messages({
