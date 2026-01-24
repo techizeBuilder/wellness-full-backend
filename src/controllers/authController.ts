@@ -153,12 +153,43 @@ export const verifyOTP = asyncHandler(async (req: Request, res: Response) => {
   return ApiResponse.success(res, null, MESSAGES.AUTH.OTP_VERIFIED);
 });
 
-// @desc    Forgot password
+// @desc    Forgot password (OTP-based)
 // @route   POST /api/auth/forgot-password
 // @access  Public
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-  await authService.forgotPassword(req.body.email, 'user');
-  return ApiResponse.success(res, null, MESSAGES.AUTH.PASSWORD_RESET_SENT);
+  const result = await authService.forgotPassword(req.body.email, 'user');
+  
+  // For development: include OTP in response (remove in production)
+  const responseData: any = {
+    email: result.email,
+    message: result.message
+  };
+  
+  // Only include OTP in development mode for debugging
+  if (process.env.NODE_ENV === 'development' && (result as any).otp) {
+    responseData.debugOtp = (result as any).otp;
+    console.log(`\n🔐 DEBUG Password Reset OTP for ${result.email}: ${(result as any).otp}\n`);
+  }
+  
+  return ApiResponse.success(res, responseData, result.message);
+});
+
+// @desc    Verify password reset OTP
+// @route   POST /api/auth/verify-password-reset-otp-unauthenticated
+// @access  Public
+export const verifyPasswordResetOTPUnauthenticated = asyncHandler(async (req: Request, res: Response) => {
+  const { email, otp } = req.body;
+  const result = await authService.verifyPasswordResetOTPUnauthenticated(email, otp, 'user');
+  return ApiResponse.success(res, { verified: result.verified }, result.message);
+});
+
+// @desc    Reset password with OTP (unauthenticated)
+// @route   POST /api/auth/reset-password-with-otp-unauthenticated
+// @access  Public
+export const resetPasswordWithOTPUnauthenticated = asyncHandler(async (req: Request, res: Response) => {
+  const { email, otp, password } = req.body;
+  const result = await authService.resetPasswordWithOTPUnauthenticated(email, otp, password, 'user');
+  return ApiResponse.success(res, null, result.message);
 });
 
 // @desc    Reset password with token

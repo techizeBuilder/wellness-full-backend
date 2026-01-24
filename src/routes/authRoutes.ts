@@ -14,7 +14,9 @@ import {
   updateProfile,
   requestPasswordResetOTP,
   verifyPasswordResetOTP,
-  resetPasswordWithOTP
+  resetPasswordWithOTP,
+  verifyPasswordResetOTPUnauthenticated,
+  resetPasswordWithOTPUnauthenticated
 } from '../controllers/authController';
 import { unifiedLogin } from '../controllers/unifiedAuthController';
 import { googleMobileLogin, completeGoogleOnboarding, updateGoogleUserProfile, updateGoogleExpertProfile } from '../controllers/googleAuthController';
@@ -35,7 +37,10 @@ import {
   updateGoogleUserProfileSchema,
   updateGoogleExpertProfileSchema,
   passwordResetOTPVerificationSchema,
-  resetPasswordWithOTPSchemaProtected
+  passwordResetOTPVerificationUnauthenticatedSchema,
+  resetPasswordWithOTPSchemaProtected,
+  resetPasswordWithOTPSchema,
+  resetPasswordWithOTPUnauthenticatedSchema
 } from '../utils/validation';
 
 const router = express.Router();
@@ -76,6 +81,8 @@ router.post('/google/update-user-profile', authLimiter, validate(updateGoogleUse
 router.post('/google/update-expert-profile', authLimiter, validate(updateGoogleExpertProfileSchema), updateGoogleExpertProfile);
 
 router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), forgotPassword);
+router.post('/verify-password-reset-otp-unauthenticated', authLimiter, validate(passwordResetOTPVerificationUnauthenticatedSchema), verifyPasswordResetOTPUnauthenticated);
+router.post('/reset-password-with-otp-unauthenticated', authLimiter, validate(resetPasswordWithOTPUnauthenticatedSchema), resetPasswordWithOTPUnauthenticated);
 
 router.post('/reset-password', authLimiter, validate(resetPasswordWithTokenSchema), resetPasswordWithToken);
 

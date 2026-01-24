@@ -5,9 +5,11 @@ import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import emailService from './emailService';
 import { MESSAGES } from '../constants/messages';
 import logger from '../utils/logger';
+import ENV from '../config/environment';
 import { IAuthService, RegisterUserData, AuthResult } from '../types/services.interfaces';
 import { IUser, IExpert } from '../types/models';
 import PendingRegistration from '../models/PendingRegistration';
+import PasswordResetOTP from '../models/PasswordResetOTP';
 import ENV from '../config/environment';
 
 class AuthService implements IAuthService {
@@ -397,7 +399,13 @@ class AuthService implements IAuthService {
     return { message: MESSAGES.AUTH.OTP_VERIFIED };
   }
 
-  async forgotPassword(email: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string }> {
+  async forgotPassword(email: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string; email?: string; otp?: string }> {
+    // Validate email configuration
+    if (!ENV.EMAIL_HOST || !ENV.EMAIL_USER || !ENV.EMAIL_PASS || !ENV.EMAIL_FROM) {
+      logger.error('Email configuration is missing. Please check your environment variables.');
+      throw new Error('Email service is not configured. Please contact support.');
+    }
+
     let user: IUser | IExpert | null;
     if (userType === 'expert') {
       user = await expertRepository.findByEmail(email);
@@ -406,18 +414,140 @@ class AuthService implements IAuthService {
     }
 
     if (!user) {
-      // Don't reveal if user exists for security
+      // Don't reveal if user exists for security, but still return success message
       return { message: MESSAGES.AUTH.PASSWORD_RESET_SENT };
     }
 
-    // Generate reset token
-    const resetToken = user.getResetPasswordToken();
+    // Check if there's an existing password reset OTP for this email
+    let passwordResetOTP = await PasswordResetOTP.findOne({ email, userType }).select('+otpCode +otpExpire +otpAttempts +otpLockedUntil');
+    
+    if (passwordResetOTP) {
+      // If existing OTP is locked, don't allow new request
+      if (passwordResetOTP.isOTPLocked) {
+        throw new Error('Password reset is temporarily locked due to too many attempts. Please try again later.');
+      }
+      
+      // Update existing record with new OTP
+      const otp = passwordResetOTP.generateOTP();
+      await passwordResetOTP.save();
+      
+      // Send OTP email
+      logger.info(`Attempting to send password reset OTP email to ${email} with OTP: ${otp}`);
+      const emailResult = await emailService.sendOTPEmail(email, otp, user.firstName, 'password_reset');
+      logger.info(`Password reset OTP email result for ${email}:`, { success: emailResult.success, error: emailResult.error });
+      
+      if (!emailResult.success) {
+        logger.error(`Failed to send password reset OTP email to ${email}:`, emailResult.error);
+        throw new Error('Failed to send password reset OTP email. Please check your email configuration or try again later.');
+      }
+      
+      logger.info(`Password reset OTP email sent successfully to ${email}. OTP: ${otp}`);
+      const result: any = { 
+        message: MESSAGES.AUTH.PASSWORD_RESET_SENT,
+        email 
+      };
+      // Include OTP in development mode for debugging
+      if (process.env.NODE_ENV === 'development') {
+        result.otp = otp;
+      }
+      return result;
+    }
+
+    // Create new password reset OTP record
+    passwordResetOTP = new PasswordResetOTP({
+      email,
+      userType
+    });
+
+    // Generate OTP
+    const otp = passwordResetOTP.generateOTP();
+    await passwordResetOTP.save();
+
+    // Send OTP email
+    logger.info(`Attempting to send password reset OTP email to ${email} with OTP: ${otp}`);
+    const emailResult = await emailService.sendOTPEmail(email, otp, user.firstName, 'password_reset');
+    logger.info(`Password reset OTP email result for ${email}:`, { success: emailResult.success, error: emailResult.error });
+    
+    if (!emailResult.success) {
+      logger.error(`Failed to send password reset OTP email to ${email}:`, emailResult.error);
+      throw new Error('Failed to send password reset OTP email. Please check your email configuration or try again later.');
+    }
+    
+    logger.info(`Password reset OTP email sent successfully to ${email}. OTP: ${otp}`);
+    const result: any = { 
+      message: MESSAGES.AUTH.PASSWORD_RESET_SENT,
+      email 
+    };
+    // Include OTP in development mode for debugging
+    if (process.env.NODE_ENV === 'development') {
+      result.otp = otp;
+    }
+    return result;
+  }
+
+  // Verify password reset OTP for unauthenticated users
+  async verifyPasswordResetOTPUnauthenticated(email: string, otp: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string; verified: boolean }> {
+    const passwordResetOTP = await PasswordResetOTP.findOne({ email, userType }).select('+otpCode +otpExpire +otpAttempts +otpLockedUntil');
+    
+    if (!passwordResetOTP) {
+      throw new Error('No password reset request found. Please request a new password reset.');
+    }
+
+    const verificationResult = passwordResetOTP.verifyOTP(otp);
+    
+    if (verificationResult.success) {
+      // Don't delete the OTP record yet - we need it for the password reset step
+      await passwordResetOTP.save();
+      return { message: 'OTP verified successfully. You can now reset your password.', verified: true };
+    } else {
+      // Save the updated attempt count and lock status
+      await passwordResetOTP.save();
+      throw new Error(verificationResult.message);
+    }
+  }
+
+  // Reset password with OTP for unauthenticated users
+  async resetPasswordWithOTPUnauthenticated(email: string, otp: string, newPassword: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string }> {
+    const passwordResetOTP = await PasswordResetOTP.findOne({ email, userType }).select('+otpCode +otpExpire +otpAttempts +otpLockedUntil');
+    
+    if (!passwordResetOTP) {
+      throw new Error('No password reset request found. Please request a new password reset.');
+    }
+
+    // Verify OTP again for security
+    const verificationResult = passwordResetOTP.verifyOTP(otp);
+    
+    if (!verificationResult.success) {
+      await passwordResetOTP.save();
+      throw new Error(verificationResult.message);
+    }
+
+    // Find the actual user
+    let user: IUser | IExpert | null;
+    if (userType === 'expert') {
+      user = await expertRepository.findByEmail(email);
+    } else {
+      user = await userRepository.findByEmail(email);
+    }
+
+    if (!user) {
+      throw new Error('User not found.');
+    }
+
+    // Update password
+    user.password = newPassword;
+    // Clear any existing reset tokens
+    if ('passwordResetToken' in user) {
+      user.passwordResetToken = undefined;
+      user.passwordResetExpire = undefined;
+    }
     await user.save();
 
-    // Send reset email
-    await emailService.sendPasswordResetEmail(email, resetToken, user.firstName);
+    // Delete the password reset OTP record
+    await PasswordResetOTP.deleteOne({ email, userType });
 
-    return { message: MESSAGES.AUTH.PASSWORD_RESET_SENT };
+    logger.info(`Password reset successfully completed for ${email}`);
+    return { message: 'Password reset successfully. You can now login with your new password.' };
   }
 
   async resetPassword(resetToken: string, newPassword: string, userType: 'user' | 'expert' = 'user'): Promise<{ message: string }> {

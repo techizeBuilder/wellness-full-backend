@@ -245,7 +245,40 @@ export const passwordResetOTPVerificationSchema = Joi.object({
   })
 });
 
+export const passwordResetOTPVerificationUnauthenticatedSchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    'string.email': 'Please provide a valid email address',
+    'string.empty': 'Email is required'
+  }),
+  otp: Joi.string().length(6).pattern(/^\d+$/).required().messages({
+    'string.length': 'OTP must be 6 digits',
+    'string.pattern.base': 'OTP must contain only numbers',
+    'string.empty': 'OTP is required'
+  })
+});
+
 export const resetPasswordWithOTPSchemaProtected = Joi.object({
+  otp: Joi.string().length(6).pattern(/^\d+$/).required().messages({
+    'string.length': 'OTP must be 6 digits',
+    'string.pattern.base': 'OTP must contain only numbers',
+    'string.empty': 'OTP is required'
+  }),
+  password: Joi.string()
+    .min(6)
+    .max(128)
+    .required()
+    .messages({
+      'string.min': 'Password must be at least 6 characters long',
+      'string.max': 'Password cannot exceed 128 characters',
+      'string.empty': 'Password is required'
+    })
+});
+
+export const resetPasswordWithOTPUnauthenticatedSchema = Joi.object({
+  email: Joi.string().email().required().messages({
+    'string.email': 'Please provide a valid email address',
+    'string.empty': 'Email is required'
+  }),
   otp: Joi.string().length(6).pattern(/^\d+$/).required().messages({
     'string.length': 'OTP must be 6 digits',
     'string.pattern.base': 'OTP must contain only numbers',
@@ -366,6 +399,8 @@ export default {
   resetPasswordSchema,
   resetPasswordWithTokenSchema,
   resetPasswordWithOTPSchema,
+  passwordResetOTPVerificationUnauthenticatedSchema,
+  resetPasswordWithOTPUnauthenticatedSchema,
   otpVerificationSchema,
   changePasswordSchema,
   updateProfileSchema,
