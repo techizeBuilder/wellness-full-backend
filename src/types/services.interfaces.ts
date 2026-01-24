@@ -17,7 +17,7 @@ export interface IAuthService {
   loginUser(email: string, password: string): Promise<
     AuthResult | { requiresVerification: true; email: string; message: string; verificationType: 'email' | 'login' }
   >;
-  loginExpert(email: string, password: string): Promise<AuthResult>;
+  loginExpert(email: string, password: string): Promise<AuthResult | { requiresVerification: true; email: string; message: string; verificationType: 'email' | 'login' }>;
   sendOTP(email: string, userType?: 'user' | 'expert'): Promise<{ message: string }>;
   verifyOTP(email: string, otp: string, userType?: 'user' | 'expert'): Promise<{ message: string } | AuthResult>;
   forgotPassword(email: string, userType?: 'user' | 'expert'): Promise<{ message: string }>;

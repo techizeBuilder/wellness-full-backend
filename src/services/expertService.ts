@@ -31,7 +31,7 @@ class ExpertService implements IExpertService {
       password,
       userType: 'expert',
       verificationStatus: 'pending',
-      isEmailVerified: true,
+      isEmailVerified: false, // Experts MUST verify email before dashboard access
       isPhoneVerified: true,
       isActive: true,
       ...otherData

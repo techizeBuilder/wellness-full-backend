@@ -3,28 +3,37 @@ import { Request, Response, NextFunction } from 'express';
 import { validateEmailStrict } from './emailValidation';
 
 export const userRegisterSchema = Joi.object({
-  firstName: Joi.string().trim().min(2).max(50).required().messages({
-    'string.empty': 'First name is required',
-    'string.min': 'First name must be at least 2 characters long',
-    'string.max': 'First name cannot exceed 50 characters'
+  firstName: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z0-9\s_]+$/).required().messages({
+    'string.empty': 'Full Name is required.',
+    'string.min': 'Full Name must be at least 2 characters long.',
+    'string.max': 'Full Name cannot exceed 50 characters.',
+    'string.pattern.base': 'Full Name can only contain letters, numbers, spaces, and underscores.'
   }),
-  lastName: Joi.string().trim().min(2).max(50).required().messages({
-    'string.empty': 'Last name is required',
-    'string.min': 'Last name must be at least 2 characters long',
-    'string.max': 'Last name cannot exceed 50 characters'
+  lastName: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z0-9\s_]+$/).required().messages({
+    'string.empty': 'Full Name is required.',
+    'string.min': 'Full Name must be at least 2 characters long.',
+    'string.max': 'Full Name cannot exceed 50 characters.',
+    'string.pattern.base': 'Full Name can only contain letters, numbers, spaces, and underscores.'
   }),
   email: Joi.string().email({ tlds: { allow: false } }).required().messages({
-    'string.email': 'Please enter a valid email address',
-    'string.empty': 'Email is required'
+    'string.email': 'Please enter a valid email address.',
+    'string.empty': 'Email is required.'
   }),
-  phone: Joi.string().pattern(/^\d{10}$/).required().messages({
-    'string.pattern.base': 'Phone number must be exactly 10 digits',
-    'string.empty': 'Phone number is required'
+  phone: Joi.string().pattern(/^\d{10}$/).custom((value, helpers) => {
+    // Check for repetitive patterns (all digits the same)
+    if (/^(\d)\1{9}$/.test(value)) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  }).required().messages({
+    'string.pattern.base': 'Phone Number must be exactly 10 digits.',
+    'string.empty': 'Phone Number is required.',
+    'any.invalid': 'Phone Number cannot have all digits the same.'
   }),
   password: Joi.string().min(6).max(128).required().messages({
-    'string.min': 'Password must be at least 6 characters long',
-    'string.max': 'Password cannot exceed 128 characters',
-    'string.empty': 'Password is required'
+    'string.min': 'Password must be at least 6 characters long.',
+    'string.max': 'Password cannot exceed 128 characters.',
+    'string.empty': 'Password is required.'
   }),
   dateOfBirth: Joi.date().max('now').optional(),
   gender: Joi.string().valid('male', 'female', 'other').optional()
@@ -32,63 +41,70 @@ export const userRegisterSchema = Joi.object({
 
 export const expertRegisterSchema = Joi.object({
   firstName: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z\s_]+$/).required().messages({
-    'string.empty': 'First name is required',
-    'string.min': 'First name must be at least 2 characters long',
-    'string.max': 'First name cannot exceed 50 characters',
-    'string.pattern.base': 'First name can only contain letters, spaces, and underscores'
+    'string.empty': 'Full Name is required.',
+    'string.min': 'Full Name must be at least 2 characters long.',
+    'string.max': 'Full Name cannot exceed 50 characters.',
+    'string.pattern.base': 'Full Name can only contain letters, spaces, and underscores.'
   }),
   lastName: Joi.string().trim().min(2).max(50).pattern(/^[a-zA-Z\s_]+$/).required().messages({
-    'string.empty': 'Last name is required',
-    'string.min': 'Last name must be at least 2 characters long',
-    'string.max': 'Last name cannot exceed 50 characters',
-    'string.pattern.base': 'Last name can only contain letters, spaces, and underscores'
+    'string.empty': 'Full Name is required.',
+    'string.min': 'Full Name must be at least 2 characters long.',
+    'string.max': 'Full Name cannot exceed 50 characters.',
+    'string.pattern.base': 'Full Name can only contain letters, spaces, and underscores.'
   }),
   email: Joi.string().email({ tlds: { allow: false } }).required().messages({
-    'string.email': 'Please enter a valid email address',
-    'string.empty': 'Email is required'
+    'string.email': 'Please enter a valid email address.',
+    'string.empty': 'Email is required.'
   }),
-  phone: Joi.string().pattern(/^\d{10}$/).required().messages({
-    'string.pattern.base': 'Phone number must be exactly 10 digits',
-    'string.empty': 'Phone number is required'
+  phone: Joi.string().pattern(/^\d{10}$/).custom((value, helpers) => {
+    // Check for repetitive patterns (all digits the same)
+    if (/^(\d)\1{9}$/.test(value)) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  }).required().messages({
+    'string.pattern.base': 'Phone Number must be exactly 10 digits.',
+    'string.empty': 'Phone Number is required.',
+    'any.invalid': 'Phone Number cannot have all digits the same.'
   }),
   password: Joi.string().min(6).max(128).required().messages({
-    'string.min': 'Password must be at least 6 characters long',
-    'string.max': 'Password cannot exceed 128 characters',
-    'string.empty': 'Password is required'
+    'string.min': 'Password must be at least 6 characters long.',
+    'string.max': 'Password cannot exceed 128 characters.',
+    'string.empty': 'Password is required.'
   }),
   specialization: Joi.string().trim().min(2).max(100).required().messages({
-    'string.empty': 'Specialization is required',
-    'string.min': 'Specialization must be at least 2 characters long'
+    'string.empty': 'Please select your specialization.',
+    'string.min': 'Specialization must be at least 2 characters long.'
   }),
   experience: Joi.number().integer().min(0).max(50).optional().messages({
-    'number.base': 'Experience must be a number',
-    'number.min': 'Experience cannot be negative',
-    'number.max': 'Experience cannot exceed 50 years'
+    'number.base': 'Please enter a valid non-negative whole number for years of experience.',
+    'number.min': 'Experience cannot be negative.',
+    'number.max': 'Experience cannot exceed 50 years.'
   }),
-  bio: Joi.string().trim().max(1000).optional().messages({ 'string.max': 'Bio cannot exceed 1000 characters' }),
-  hourlyRate: Joi.number().min(0).optional().messages({ 'number.min': 'Hourly rate cannot be negative' }),
+  bio: Joi.string().trim().max(1000).optional().messages({ 'string.max': 'Bio cannot exceed 1000 characters.' }),
+  hourlyRate: Joi.number().min(0).optional().messages({ 'number.min': 'Please enter a valid non-negative consultation fee.' }),
   qualifications: Joi.array().items(Joi.object({
     degree: Joi.string().required(),
     institution: Joi.string().required(),
     year: Joi.number().integer().min(1950).max(new Date().getFullYear()).required()
-  })).optional().messages({ 'array.min': 'At least one qualification is required' }),
+  })).optional().messages({ 'array.min': 'At least one qualification is required.' }),
   languages: Joi.array().items(Joi.string().trim()).optional(),
   consultationMethods: Joi.array().items(Joi.string().valid('video', 'audio', 'chat', 'in-person')).optional()
-}).messages({ 'object.base': 'Please provide valid registration data' });
+}).messages({ 'object.base': 'Please provide valid registration data.' });
 
 export const loginSchema = Joi.object({
   email: Joi.string().email({ tlds: { allow: false } }).required().messages({
-    'string.email': 'Please enter a valid email address',
-    'string.empty': 'Email is required'
+    'string.email': 'Please enter a valid email address.',
+    'string.empty': 'Email is required.'
   }),
-  password: Joi.string().required().messages({ 'string.empty': 'Password is required' }),
+  password: Joi.string().required().messages({ 'string.empty': 'Password is required.' }),
   userType: Joi.string().valid('user', 'expert').optional()
 });
 
 export const forgotPasswordSchema = Joi.object({
   email: Joi.string().email({ tlds: { allow: false } }).required().messages({
-    'string.email': 'Please enter a valid email address',
-    'string.empty': 'Email is required'
+    'string.email': 'Please enter a valid email address.',
+    'string.empty': 'Email is required.'
   }),
   userType: Joi.string().valid('user', 'expert').optional()
 });
@@ -111,40 +127,54 @@ export const completeOnboardingSchema = Joi.object({
 
 export const updateGoogleUserProfileSchema = Joi.object({
   userId: Joi.string().required().messages({
-    'string.empty': 'User ID is required'
+    'string.empty': 'User ID is required.'
   }),
   firstName: Joi.string().trim().min(2).max(50).optional(),
   lastName: Joi.string().trim().min(2).max(50).optional(),
-  phone: Joi.string().pattern(/^\d{10}$/).required().messages({
-    'string.pattern.base': 'Phone number must be exactly 10 digits',
-    'string.empty': 'Phone number is required'
+  phone: Joi.string().pattern(/^\d{10}$/).custom((value, helpers) => {
+    // Check for repetitive patterns (all digits the same)
+    if (/^(\d)\1{9}$/.test(value)) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  }).required().messages({
+    'string.pattern.base': 'Phone Number must be exactly 10 digits.',
+    'string.empty': 'Phone Number is required.',
+    'any.invalid': 'Phone Number cannot have all digits the same.'
   })
 });
 
 export const updateGoogleExpertProfileSchema = Joi.object({
   userId: Joi.string().required().messages({
-    'string.empty': 'User ID is required'
+    'string.empty': 'User ID is required.'
   }),
   firstName: Joi.string().trim().min(2).max(50).optional(),
   lastName: Joi.string().trim().min(2).max(50).optional(),
-  phone: Joi.string().pattern(/^\d{10}$/).required().messages({
-    'string.pattern.base': 'Phone number must be exactly 10 digits',
-    'string.empty': 'Phone number is required'
+  phone: Joi.string().pattern(/^\d{10}$/).custom((value, helpers) => {
+    // Check for repetitive patterns (all digits the same)
+    if (/^(\d)\1{9}$/.test(value)) {
+      return helpers.error('any.invalid');
+    }
+    return value;
+  }).required().messages({
+    'string.pattern.base': 'Phone Number must be exactly 10 digits.',
+    'string.empty': 'Phone Number is required.',
+    'any.invalid': 'Phone Number cannot have all digits the same.'
   }),
   specialization: Joi.string().trim().min(2).max(100).required().messages({
-    'string.empty': 'Specialization is required',
-    'string.min': 'Specialization must be at least 2 characters long'
+    'string.empty': 'Please select your specialization.',
+    'string.min': 'Specialization must be at least 2 characters long.'
   }),
   experience: Joi.number().integer().min(0).max(50).optional().messages({
-    'number.base': 'Experience must be a number',
-    'number.min': 'Experience cannot be negative',
-    'number.max': 'Experience cannot exceed 50 years'
+    'number.base': 'Please enter a valid non-negative whole number for years of experience.',
+    'number.min': 'Experience cannot be negative.',
+    'number.max': 'Experience cannot exceed 50 years.'
   }),
   bio: Joi.string().trim().max(1000).optional().messages({
-    'string.max': 'Bio cannot exceed 1000 characters'
+    'string.max': 'Bio cannot exceed 1000 characters.'
   }),
   hourlyRate: Joi.number().min(0).optional().messages({
-    'number.min': 'Hourly rate cannot be negative'
+    'number.min': 'Please enter a valid non-negative consultation fee.'
   })
 });
 

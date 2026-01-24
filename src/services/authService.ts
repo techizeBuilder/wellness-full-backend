@@ -59,7 +59,7 @@ class AuthService implements IAuthService {
       // Update the pending registration with new data and generate new OTP
       pendingRegistration.firstName = firstName;
       pendingRegistration.lastName = lastName || firstName;
-      pendingRegistration.phone = finalPhone;
+      pendingRegistration.phone = normalizedPhone;
       pendingRegistration.password = password;
       pendingRegistration.dateOfBirth = dateOfBirth;
       pendingRegistration.gender = gender;
@@ -94,7 +94,7 @@ class AuthService implements IAuthService {
       firstName,
       lastName: finalLastName,
       email,
-      phone: finalPhone,
+      phone: normalizedPhone,
       password,
       dateOfBirth,
       gender,
@@ -265,7 +265,9 @@ class AuthService implements IAuthService {
     };
   }
 
-  async loginExpert(email: string, password: string): Promise<AuthResult> {
+  async loginExpert(email: string, password: string): Promise<
+    AuthResult | { requiresVerification: true; email: string; message: string; verificationType: 'email' | 'login' }
+  > {
     const expert = await expertRepository.findByEmail(email, true);
     
     if (!expert) {
@@ -286,6 +288,27 @@ class AuthService implements IAuthService {
     if (!isPasswordValid) {
       await expert.incLoginAttempts();
       throw new Error(MESSAGES.AUTH.INVALID_CREDENTIALS);
+    }
+
+    // CRITICAL: Check if expert has verified their email - REQUIRED for dashboard access
+    if (!expert.isEmailVerified) {
+      // Generate and send OTP for email verification
+      const otp = expert.generateOTP();
+      await expert.save();
+      
+      // Send OTP email
+      const emailResult = await emailService.sendOTPEmail(email, otp, expert.firstName, 'verification');
+      if (!emailResult.success) {
+        logger.error('Failed to send verification OTP email:', emailResult.error);
+        throw new Error('Failed to send verification email. Please try again later.');
+      }
+      
+      return {
+        requiresVerification: true,
+        email,
+        message: 'Expert account requires email verification. Please verify your email address using the OTP sent to your email.',
+        verificationType: 'email'
+      };
     }
 
     // Reset login attempts on successful login

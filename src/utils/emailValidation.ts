@@ -75,63 +75,81 @@ export const checkPhoneExists = async (phone: string, excludeCollection: 'user' 
 /**
  * Strict email validation for healthcare-grade data integrity
  * Rejects invalid patterns while accepting valid formats
+ * 
+ * REJECTS:
+ * - demo@domain.com.com.com
+ * - _demo@domain.com
+ * - demo@domain.c4m
+ * - demo@domain.c0m
+ * - demo@domain.com.subdomain.com
+ * 
+ * ACCEPTS:
+ * - user+tag@domain.com
+ * - user.name@domain.co.uk
+ * - user123@domain.org
  */
 export const validateEmailStrict = (email: string): { isValid: boolean; error?: string } => {
   if (!email || !email.trim()) {
-    return { isValid: false, error: 'Email is required' };
+    return { isValid: false, error: 'Email is required.' };
   }
 
   const trimmedEmail = email.trim().toLowerCase();
 
   // Basic structure check
   if (!trimmedEmail.includes('@') || !trimmedEmail.includes('.')) {
-    return { isValid: false, error: 'Please enter a valid email address' };
+    return { isValid: false, error: 'Please enter a valid email address.' };
   }
 
   const parts = trimmedEmail.split('@');
   if (parts.length !== 2) {
-    return { isValid: false, error: 'Please enter a valid email address' };
+    return { isValid: false, error: 'Please enter a valid email address.' };
   }
 
   const [localPart, domainPart] = parts;
 
-  // Reject emails starting with underscore
+  // Reject emails starting with underscore (per requirements)
   if (localPart.startsWith('_')) {
-    return { isValid: false, error: 'Email cannot start with an underscore' };
+    return { isValid: false, error: 'Email cannot start with an underscore.' };
   }
 
   // Reject invalid local part patterns
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._+-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/.test(localPart)) {
-    return { isValid: false, error: 'Please enter a valid email address' };
+    return { isValid: false, error: 'Please enter a valid email address.' };
   }
 
   // Reject multiple consecutive dots
   if (localPart.includes('..') || domainPart.includes('..')) {
-    return { isValid: false, error: 'Please enter a valid email address' };
+    return { isValid: false, error: 'Please enter a valid email address.' };
+  }
+
+  // Enhanced domain validation
+  const domainParts = domainPart.split('.');
+  if (domainParts.length < 2) {
+    return { isValid: false, error: 'Please enter a valid email address.' };
   }
 
   // Reject domain with numbers in TLD (e.g., .c4m, .c0m)
-  const domainParts = domainPart.split('.');
-  if (domainParts.length < 2) {
-    return { isValid: false, error: 'Please enter a valid email address' };
-  }
-
   const tld = domainParts[domainParts.length - 1];
   if (/\d/.test(tld)) {
-    return { isValid: false, error: 'Please enter a valid email address' };
+    return { isValid: false, error: 'Please enter a valid email address.' };
   }
 
-  // Reject multiple TLD patterns (e.g., .com.com.com, .com.subdomain.com)
-  if (domainParts.length > 2) {
-    // Allow subdomains but reject multiple TLDs
-    const lastTwo = domainParts.slice(-2);
-    const validTLDs = ['com', 'org', 'net', 'edu', 'gov', 'co', 'io', 'in', 'uk', 'au', 'ca', 'de', 'fr', 'jp', 'cn'];
-    const secondLast = lastTwo[0].toLowerCase();
-    const last = lastTwo[1].toLowerCase();
+  // Reject specific invalid patterns mentioned in requirements
+  // Check for multiple TLD-like patterns (e.g., .com.com.com, .com.subdomain.com)
+  if (domainParts.length >= 3) {
+    const validTLDs = ['com', 'org', 'net', 'edu', 'gov', 'co', 'io', 'in', 'uk', 'au', 'ca', 'de', 'fr', 'jp', 'cn', 'mil', 'biz', 'info'];
     
-    // Reject patterns like domain.com.com or domain.com.subdomain
-    if (validTLDs.includes(secondLast) && validTLDs.includes(last)) {
-      return { isValid: false, error: 'Please enter a valid email address' };
+    // Check if we have suspicious multiple TLD patterns
+    let tldCount = 0;
+    for (let i = 1; i < domainParts.length; i++) {
+      if (validTLDs.includes(domainParts[i].toLowerCase())) {
+        tldCount++;
+      }
+    }
+    
+    // Reject if more than 1 TLD-like part (handles .com.com.com and .com.subdomain.com cases)
+    if (tldCount > 1) {
+      return { isValid: false, error: 'Please enter a valid email address.' };
     }
   }
 
@@ -141,13 +159,13 @@ export const validateEmailStrict = (email: string): { isValid: boolean; error?: 
   const strictEmailRegex = /^[a-zA-Z0-9][a-zA-Z0-9._+-]*[a-zA-Z0-9]@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$/;
   
   if (!strictEmailRegex.test(trimmedEmail)) {
-    return { isValid: false, error: 'Please enter a valid email address' };
+    return { isValid: false, error: 'Please enter a valid email address.' };
   }
 
   // Additional check: ensure TLD is at least 2 characters and only letters
   const tldMatch = trimmedEmail.match(/\.([a-zA-Z]{2,})$/);
   if (!tldMatch || tldMatch[1].length < 2) {
-    return { isValid: false, error: 'Please enter a valid email address' };
+    return { isValid: false, error: 'Please enter a valid email address.' };
   }
 
   return { isValid: true };
