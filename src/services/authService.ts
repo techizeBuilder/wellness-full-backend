@@ -10,7 +10,6 @@ import { IAuthService, RegisterUserData, AuthResult } from '../types/services.in
 import { IUser, IExpert } from '../types/models';
 import PendingRegistration from '../models/PendingRegistration';
 import PasswordResetOTP from '../models/PasswordResetOTP';
-import ENV from '../config/environment';
 
 class AuthService implements IAuthService {
   async registerUser(userData: RegisterUserData): Promise<{ message: string; email: string }> {
