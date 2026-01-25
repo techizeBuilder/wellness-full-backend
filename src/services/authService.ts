@@ -414,8 +414,8 @@ class AuthService implements IAuthService {
     }
 
     if (!user) {
-      // Don't reveal if user exists for security, but still return success message
-      return { message: MESSAGES.AUTH.PASSWORD_RESET_SENT };
+      // Check if user exists before sending OTP
+      throw new Error(MESSAGES.AUTH.USER_NOT_FOUND);
     }
 
     // Check if there's an existing password reset OTP for this email

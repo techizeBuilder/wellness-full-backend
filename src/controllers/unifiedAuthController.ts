@@ -4,6 +4,7 @@ import Expert from '../models/Expert';
 import emailService from '../services/emailService';
 import logger from '../utils/logger';
 import { MESSAGES } from '../constants/messages';
+import { generateToken, generateRefreshToken } from '../middlewares/auth';
 
 // @desc    Unified login for both users and experts
 // @route   POST /api/auth/unified-login
@@ -166,15 +167,49 @@ const unifiedLogin = asyncHandler(async (req, res) => {
     });
   }
 
-  // If email isn't verified, force verification before login
-  if (!user.isEmailVerified) {
-    console.log(`${accountType} email not verified. Triggering verification OTP.`);
-    return sendVerificationResponse('email', MESSAGES.AUTH.EMAIL_NOT_VERIFIED);
+  // Reset login attempts on successful login (for experts)
+  if (userType === 'expert' && user.resetLoginAttempts) {
+    try {
+      await user.resetLoginAttempts();
+    } catch (error) {
+      console.log('Error resetting login attempts:', error.message);
+    }
   }
 
-  // After successful password verification, always send OTP for login verification
-  console.log(`Password verified for ${accountType}, sending login OTP:`, email);
-  return sendVerificationResponse('login', 'Please verify your login with the OTP sent to your email.');
+  // Update last login
+  user.lastLogin = new Date();
+  await user.save();
+
+  // Generate tokens
+  const token = generateToken(user._id.toString(), userType);
+  const refreshToken = generateRefreshToken(user._id.toString(), userType);
+
+  // Prepare user response (remove password)
+  const userResponse: any = user.toObject();
+  delete userResponse.password;
+
+  // Return successful login response
+  console.log(`Login successful for ${accountType}:`, email);
+  return res.status(200).json({
+    success: true,
+    message: `${accountType} login successful!`,
+    data: {
+      user: {
+        id: userResponse._id.toString(),
+        email: userResponse.email,
+        firstName: userResponse.firstName,
+        lastName: userResponse.lastName,
+        phone: userResponse.phone,
+        userType: userType,
+        isEmailVerified: userResponse.isEmailVerified,
+        profileImage: userResponse.profileImage || null,
+      },
+      userType: userType,
+      accountType: normalizedAccountType,
+      token,
+      refreshToken
+    }
+  });
 
 });
 
