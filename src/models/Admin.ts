@@ -7,6 +7,7 @@ export interface IAdmin extends Document {
   password: string;
   role: 'superadmin' | 'admin';
   permissions: string[];
+  profileImage?: string | null;
   isActive: boolean;
   isPrimary: boolean;
   lastLogin?: Date;
@@ -47,6 +48,10 @@ const adminSchema = new mongoose.Schema<IAdmin, AdminModel>({
     default: 'admin'
   },
   permissions: [{ type: String }],
+  profileImage: {
+    type: String,
+    default: null
+  },
   isActive: {
     type: Boolean,
     default: true

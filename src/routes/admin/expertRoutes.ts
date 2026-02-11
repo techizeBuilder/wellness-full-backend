@@ -14,9 +14,8 @@ import {
 
 import { adminProtect, hasPermission } from '../../middlewares/admin/adminAuth';
 
-// All routes require admin authentication and manage_experts permission
+// All routes require admin authentication
 router.use(adminProtect);
-router.use(hasPermission('manage_experts'));
 
 // GET /api/admin/experts/stats - Get expert statistics
 router.get('/stats', getExpertStats);

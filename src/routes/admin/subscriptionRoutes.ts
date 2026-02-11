@@ -13,9 +13,8 @@ import {
 
 import { adminProtect, requireRole } from '../../middlewares/admin/adminAuth';
 
-// All routes require admin authentication and superadmin role
+// All routes require admin authentication
 router.use(adminProtect);
-router.use(requireRole('superadmin'));
 
 // GET /api/admin/subscriptions/stats - Get subscription statistics
 router.get('/stats', getSubscriptionStats);

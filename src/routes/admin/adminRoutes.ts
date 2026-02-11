@@ -5,6 +5,7 @@ import { adminLogin, getProfile, changePassword, forgotPassword, resetPassword }
 import { listAdmins, createAdmin, updateAdmin, updateAdminPassword, deleteAdmin } from '../../controllers/admin/adminManagementController';
 import { createPermission, listPermissions, updatePermission, deletePermission } from '../../controllers/admin/permissionController';
 import { adminProtect, requireRole } from '../../middlewares/admin/adminAuth';
+import { uploadProfileImage } from '../../middlewares/upload';
 import Admin from '../../models/Admin';
 
 // Auth
@@ -14,7 +15,7 @@ router.post('/auth/reset-password', resetPassword);
 
 // Admin profile & self actions (requires admin auth)
 router.get('/profile', adminProtect, getProfile);
-router.put('/profile', adminProtect, async (req, res, next) => {
+router.put('/profile', adminProtect, uploadProfileImage, async (req, res, next) => {
   try {
     const admin = await Admin.findById((req as any).admin.id);
     if (!admin) return res.status(404).json({ success: false, message: 'Admin not found' });
@@ -22,8 +23,14 @@ router.put('/profile', adminProtect, async (req, res, next) => {
     const { name, email } = req.body;
     if (name) admin.name = name;
     if (email) admin.email = email;
+    
+    // Handle profile image upload
+    if (req.file) {
+      admin.profileImage = req.file.filename;
+    }
+    
     await admin.save();
-    res.status(200).json({ success: true, data: { admin } });
+    res.status(200).json({ success: true, data: { admin }, message: 'Profile updated successfully' });
   } catch (err) {
     next(err);
   }

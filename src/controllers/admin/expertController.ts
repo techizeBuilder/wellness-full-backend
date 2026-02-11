@@ -55,14 +55,15 @@ const getExpertStats = asyncHandler(async (req, res) => {
 
 // Get all experts
 const getExperts = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 10, search, status, specialty, startDate, endDate } = req.query;
+  const { page = 1, limit = 10, search, status, verificationStatus, specialty, startDate, endDate } = req.query;
   
   const query: Record<string, unknown> = {};
   
   // Add search functionality
   if (search) {
     query.$or = [
-      { name: { $regex: search, $options: 'i' } },
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
       { email: { $regex: search, $options: 'i' } },
       { phone: { $regex: search, $options: 'i' } },
       { specialization: { $regex: search, $options: 'i' } }
@@ -70,12 +71,19 @@ const getExperts = asyncHandler(async (req, res) => {
   }
   
   // Add status filter
-  if (status && ['active', 'inactive'].includes(status)) {
+  if (status && status !== 'all' && ['active', 'inactive'].includes(status)) {
     query.isActive = status === 'active';
   }
   
+  // Add verification status filter
+  if (verificationStatus && verificationStatus !== 'all') {
+    if (['pending', 'under_review', 'approved', 'rejected'].includes(verificationStatus)) {
+      query.verificationStatus = verificationStatus;
+    }
+  }
+  
   // Add specialty filter
-  if (specialty) {
+  if (specialty && specialty !== 'all') {
     query.specialization = { $regex: specialty, $options: 'i' };
   }
 

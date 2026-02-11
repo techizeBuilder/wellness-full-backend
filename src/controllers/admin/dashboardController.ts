@@ -414,7 +414,7 @@ export const getDashboardStats = asyncHandler(async (req, res) => {
       }
     ]);
     const avgRating = satisfactionData[0]?.avgRating || 0;
-    const customerSatisfaction = avgRating > 0 ? (avgRating / 5).toFixed(1) : '0.0';
+    const customerSatisfaction = `${avgRating > 0 ? avgRating.toFixed(1) : '0.0'}/5`;
 
     res.status(200).json({
       success: true,
