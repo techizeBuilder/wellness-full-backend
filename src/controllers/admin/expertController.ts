@@ -242,7 +242,8 @@ const updateExpert = asyncHandler(async (req, res) => {
     hourlyRate,
     availability,
     isActive,
-    isVerified
+    isVerified,
+    verificationStatus
   } = req.body;
   
   const expert = await Expert.findById(req.params.id);
@@ -284,7 +285,20 @@ const updateExpert = asyncHandler(async (req, res) => {
   if (typeof hourlyRate === 'number') expert.hourlyRate = hourlyRate;
   if (availability) expert.availability = availability;
   if (typeof isActive === 'boolean') expert.isActive = isActive;
-  if (typeof isVerified === 'boolean') expert.isVerified = isVerified;
+  
+  // Handle verification status
+  if (verificationStatus) {
+    expert.verificationStatus = verificationStatus;
+    expert.isVerified = verificationStatus === 'approved';
+  } else if (typeof isVerified === 'boolean') {
+    expert.isVerified = isVerified;
+    // Optionally, you might want to sync verificationStatus here as well
+    if (isVerified && expert.verificationStatus !== 'approved') {
+      expert.verificationStatus = 'approved';
+    } else if (!isVerified && expert.verificationStatus === 'approved') {
+      expert.verificationStatus = 'pending'; // Or another default
+    }
+  }
   
   await expert.save();
   
