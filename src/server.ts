@@ -33,6 +33,7 @@ import adminBookingRoutes from './routes/admin/bookingRoutes';
 import adminPaymentRoutes from './routes/admin/paymentRoutes';
 import adminDashboardRoutes from './routes/admin/dashboardRoutes';
 import adminReportsRoutes from './routes/admin/reportsRoutes';
+import notificationRoutes from './routes/notificationRoutes';
 
 // Import seeders
 import { runSeeders } from './seeders';
@@ -128,6 +129,7 @@ app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin/bookings', adminBookingRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
 app.use('/api/admin/reports', adminReportsRoutes);
+app.use('/api/admin/notifications', notificationRoutes);
 
 // Default route
 app.get('/', (req: Request, res: Response) => {

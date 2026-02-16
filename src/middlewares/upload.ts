@@ -7,6 +7,7 @@ import { Request, Response, NextFunction } from 'express';
 const ensureUploadDirs = () => {
   const uploadDirs = [
     'uploads/profiles',
+    'uploads/logos',
     'uploads/documents',
     'uploads/prescriptions',
     'uploads/temp'
@@ -46,6 +47,19 @@ const profileStorage = multer.diskStorage({
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const extension = path.extname(file.originalname);
     cb(null, `profile-${uniqueSuffix}${extension}`);
+  }
+});
+
+// Storage configuration for logo images
+const logoStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, '..', 'uploads/logos'));
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename for logo
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, `logo-${uniqueSuffix}${extension}`);
   }
 });
 
@@ -109,6 +123,13 @@ export const uploadPrescription = multer({
     fileSize: parseInt(process.env.PRESCRIPTION_MAX_FILE_SIZE || '5242880', 10)
   }
 }).single('prescription');
+
+// Logo upload middleware
+export const uploadLogo = multer({
+  storage: logoStorage,
+  fileFilter: imageFileFilter,
+  limits: limits
+}).single('logo');
 
 // Certificate storage (PDF, JPG, PNG)
 const certificateStorage = multer.diskStorage({

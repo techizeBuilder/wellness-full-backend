@@ -4,8 +4,10 @@ import Appointment from '../models/Appointment';
 import UserSubscription from '../models/UserSubscription';
 import Plan from '../models/Plan';
 import Expert from '../models/Expert';
+import Admin from '../models/Admin';
 import { createOrder, verifyPaymentSignature, verifyWebhookSignature, fetchPaymentDetails } from '../services/razorpayService';
 import { notifyParticipantsOfBooking } from './bookingController';
+import notificationService from '../services/notificationService';
 import ENV from '../config/environment';
 import logger from '../utils/logger';
 
@@ -268,6 +270,31 @@ export const verifyPayment = asyncHandler(async (req, res) => {
     // Mark payment as completed
     await (payment as any).markAsCompleted(razorpayPaymentId || orderId, signature);
 
+    // Create notification for all admins
+    const admins = await Admin.find();
+    if (admins.length > 0) {
+      const paymentAmount = payment.amount;
+      const paymentType = payment.appointment ? 'Appointment' : 'Subscription';
+      logger.info(`Creating payment notifications for ${admins.length} admins: ₹${paymentAmount}`);
+      
+      for (const admin of admins) {
+        const notif = await notificationService.createNotification(
+          admin._id.toString(),
+          'payment',
+          'Payment Received',
+          `Payment of ₹${paymentAmount} received for ${paymentType}`,
+          {
+            paymentId: payment._id,
+            amount: paymentAmount,
+            paymentType: payment.appointment ? 'appointment' : 'subscription'
+          }
+        );
+        logger.info(`Created payment notification for admin ${admin._id}: ${notif ? notif._id : 'FAILED'}`);
+      }
+    } else {
+      logger.warn('No admins found to send payment notification');
+    }
+
     // Update related records and send booking confirmation emails
     if (payment.appointment) {
       const appointment = await Appointment.findByIdAndUpdate(payment.appointment, {
@@ -352,6 +379,27 @@ export const handleWebhook = asyncHandler(async (req, res) => {
 
       if (payment && payment.status !== 'completed') {
         await (payment as any).markAsCompleted(paymentData.id);
+
+        // Create notification for all admins
+        const admins = await Admin.find();
+        if (admins.length > 0) {
+          const paymentAmount = payment.amount;
+          const paymentType = payment.appointment ? 'Appointment' : 'Subscription';
+          
+          for (const admin of admins) {
+            await notificationService.createNotification(
+              admin._id.toString(),
+              'payment',
+              'Payment Received',
+              `Payment of ₹${paymentAmount} received for ${paymentType}`,
+              {
+                paymentId: payment._id,
+                amount: paymentAmount,
+                paymentType: payment.appointment ? 'appointment' : 'subscription'
+              }
+            );
+          }
+        }
 
         // Update related records and send booking confirmation emails
         if (payment.appointment) {

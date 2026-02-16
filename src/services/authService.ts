@@ -3,6 +3,7 @@ import expertRepository from '../repositories/expertRepository';
 import { checkEmailExists, checkPhoneExists, validateEmailStrict } from '../utils/emailValidation';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import emailService from './emailService';
+import notificationService from './notificationService';
 import { MESSAGES } from '../constants/messages';
 import logger from '../utils/logger';
 import ENV from '../config/environment';
@@ -10,6 +11,7 @@ import { IAuthService, RegisterUserData, AuthResult } from '../types/services.in
 import { IUser, IExpert } from '../types/models';
 import PendingRegistration from '../models/PendingRegistration';
 import PasswordResetOTP from '../models/PasswordResetOTP';
+import Admin from '../models/Admin';
 
 class AuthService implements IAuthService {
   async registerUser(userData: RegisterUserData): Promise<{ message: string; email: string }> {
@@ -175,6 +177,28 @@ class AuthService implements IAuthService {
       isPhoneVerified: true,
       isActive: true
     });
+
+    // Create notification for all admins about new user registration
+    const admins = await Admin.find();
+    if (admins.length > 0) {
+      logger.info(`Creating notifications for ${admins.length} admins for new user: ${pendingRegistration.email}`);
+      for (const admin of admins) {
+        const notif = await notificationService.createNotification(
+          admin._id.toString(),
+          'new_user',
+          'New User Registration',
+          `${pendingRegistration.firstName} ${pendingRegistration.lastName} has registered`,
+          {
+            userId: user._id,
+            email: pendingRegistration.email,
+            phone: pendingRegistration.phone
+          }
+        );
+        logger.info(`Created notification for admin ${admin._id}: ${notif ? notif._id : 'FAILED'}`);
+      }
+    } else {
+      logger.warn('No admins found to send new user notification');
+    }
 
     // Delete pending registration after successful account creation
     await PendingRegistration.deleteOne({ email });

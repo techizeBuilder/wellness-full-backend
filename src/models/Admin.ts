@@ -52,6 +52,10 @@ const adminSchema = new mongoose.Schema<IAdmin, AdminModel>({
     type: String,
     default: null
   },
+  logo: {
+    type: String,
+    default: null
+  },
   isActive: {
     type: Boolean,
     default: true

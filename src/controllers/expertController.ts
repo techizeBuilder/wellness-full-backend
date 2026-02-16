@@ -3,10 +3,12 @@ import Expert, { IExpert } from '../models/Expert';
 import Appointment from '../models/Appointment';
 import BankAccount from '../models/BankAccount';
 import ExpertAvailability from '../models/ExpertAvailability';
+import Admin from '../models/Admin';
 import type { SortOrder } from 'mongoose';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import { sendOTPEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/emailService';
+import notificationService from '../services/notificationService';
 import { deleteFile, getFileUrl, getFilePath } from '../middlewares/upload';
 import { checkEmailExists, checkPhoneExists } from '../utils/emailValidation';
 
@@ -299,6 +301,29 @@ const registerExpert = asyncHandler(async (req, res) => {
     const expert = await Expert.create(expertData);
 
     console.log('Expert created successfully:', expert._id);
+
+    // Create notification for all admins about new expert registration
+    const admins = await Admin.find();
+    if (admins.length > 0) {
+      console.log(`Creating expert notifications for ${admins.length} admins: ${expert.email}`);
+      for (const admin of admins) {
+        const notif = await notificationService.createNotification(
+          admin._id.toString(),
+          'new_expert',
+          'New Expert Registration',
+          `${expert.firstName} ${expert.lastName} has registered as an expert in ${expert.specialization}`,
+          {
+            expertId: expert._id,
+            email: expert.email,
+            phone: expert.phone,
+            specialization: expert.specialization
+          }
+        );
+        console.log(`Created expert notification for admin ${admin._id}: ${notif ? notif._id : 'FAILED'}`);
+      }
+    } else {
+      console.warn('No admins found to send expert registration notification');
+    }
 
     // Generate and send OTP for email verification (REQUIRED - no immediate login)
     const otp = expert.generateOTP();
