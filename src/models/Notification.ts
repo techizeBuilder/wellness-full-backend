@@ -59,12 +59,12 @@ const notificationSchema = new mongoose.Schema<INotification, NotificationModel>
     default: null
   }
 }, {
-  timestamps: true,
-  indexes: [
-    { adminId: 1, isRead: 1 },
-    { adminId: 1, createdAt: -1 },
-    { createdAt: -1 }
-  ]
+  timestamps: true
 });
+
+// Create compound indexes
+notificationSchema.index({ adminId: 1, isRead: 1 });
+notificationSchema.index({ adminId: 1, createdAt: -1 });
+notificationSchema.index({ createdAt: -1 });
 
 export default mongoose.model<INotification>('Notification', notificationSchema);

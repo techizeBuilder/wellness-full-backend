@@ -8,6 +8,7 @@ export interface IAdmin extends Document {
   role: 'superadmin' | 'admin';
   permissions: string[];
   profileImage?: string | null;
+  logo?: string | null;
   isActive: boolean;
   isPrimary: boolean;
   lastLogin?: Date;

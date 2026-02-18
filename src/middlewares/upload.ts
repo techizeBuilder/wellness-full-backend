@@ -257,7 +257,7 @@ const normalizeFilename = (filePath: string | null | undefined): string | null =
 };
 
 // Helper function to get file URL
-export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' = 'profiles') => {
+export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' | 'logos' = 'profiles') => {
   if (!filename) return null;
   
   // Normalize filename to handle cases where full path might be stored
@@ -268,7 +268,7 @@ export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documen
 };
 
 // Helper function to get absolute file path
-export const getFilePath = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' = 'profiles') => {
+export const getFilePath = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' | 'logos' = 'profiles') => {
   if (!filename) return null;
   return path.join(__dirname, '..', 'uploads', type, filename);
 };
