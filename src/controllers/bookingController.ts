@@ -23,7 +23,7 @@ type PopulatedAppointment = IAppointment & {
 };
 
 const getSessionDateTimes = async (appointment: IAppointment) => {
-  // IST offset: UTC+5:30 = 5.5 hours = 330 minutes
+  
   const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
   
   // For dynamic group sessions, fetch date/time from plan
