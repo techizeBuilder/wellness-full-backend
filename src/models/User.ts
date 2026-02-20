@@ -35,6 +35,11 @@ export interface IUser extends Document {
   otpLockedUntil?: Date;
   loginAttempts: number;
   lockUntil?: Date;
+  fcmToken?: string;
+  fcmTokens?: string[];
+  expoPushToken?: string;
+  expoPushTokens?: string[];
+  notificationsEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
 
@@ -215,7 +220,29 @@ const userSchema = new mongoose.Schema<IUser, UserModel>({
     type: Number,
     default: 0
   },
-  lockUntil: Date
+  lockUntil: Date,
+  
+  // Push notification tokens
+  fcmToken: {
+    type: String,
+    default: null
+  },
+  fcmTokens: {
+    type: [String],
+    default: []
+  },
+  expoPushToken: {
+    type: String,
+    default: null
+  },
+  expoPushTokens: {
+    type: [String],
+    default: []
+  },
+  notificationsEnabled: {
+    type: Boolean,
+    default: true
+  }
 }, {
   timestamps: true
 });

@@ -1,6 +1,7 @@
 import ENV from '../config/environment';
 import UserSubscription from '../models/UserSubscription';
 import logger from '../utils/logger';
+import pushNotificationService from './pushNotificationService';
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
 
@@ -34,6 +35,13 @@ const processExpiredSubscriptions = async () => {
         subscription.autoRenewal = false;
         await subscription.save();
         logger.info(`Subscription ${subscription._id} expired successfully`);
+        
+        // Send push notification about subscription expiry
+        await pushNotificationService.sendSubscriptionExpired(
+          subscription.user,
+          subscription.planName,
+          subscription._id.toString()
+        );
       } catch (error: any) {
         logger.error(`Failed to expire subscription ${subscription._id}`, error);
       }

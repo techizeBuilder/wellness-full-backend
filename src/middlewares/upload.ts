@@ -10,6 +10,7 @@ const ensureUploadDirs = () => {
     'uploads/logos',
     'uploads/documents',
     'uploads/prescriptions',
+    'uploads/content',
     'uploads/temp'
   ];
 
@@ -60,6 +61,19 @@ const logoStorage = multer.diskStorage({
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const extension = path.extname(file.originalname);
     cb(null, `logo-${uniqueSuffix}${extension}`);
+  }
+});
+
+// Storage configuration for content images
+const contentStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, path.join(__dirname, '..', 'uploads/content'));
+  },
+  filename: function (req, file, cb) {
+    // Generate unique filename for content image
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = path.extname(file.originalname);
+    cb(null, `content-${uniqueSuffix}${extension}`);
   }
 });
 
@@ -130,6 +144,13 @@ export const uploadLogo = multer({
   fileFilter: imageFileFilter,
   limits: limits
 }).single('logo');
+
+// Content image upload middleware
+export const uploadContentImage = multer({
+  storage: contentStorage,
+  fileFilter: imageFileFilter,
+  limits: limits
+}).single('image');
 
 // Certificate storage (PDF, JPG, PNG)
 const certificateStorage = multer.diskStorage({
@@ -257,7 +278,7 @@ const normalizeFilename = (filePath: string | null | undefined): string | null =
 };
 
 // Helper function to get file URL
-export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' | 'logos' = 'profiles') => {
+export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' | 'logos' | 'content' = 'profiles') => {
   if (!filename) return null;
   
   // Normalize filename to handle cases where full path might be stored
@@ -268,7 +289,7 @@ export const getFileUrl = (filename?: string | null, type: 'profiles' | 'documen
 };
 
 // Helper function to get absolute file path
-export const getFilePath = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' | 'logos' = 'profiles') => {
+export const getFilePath = (filename?: string | null, type: 'profiles' | 'documents' | 'prescriptions' | 'logos' | 'content' = 'profiles') => {
   if (!filename) return null;
   return path.join(__dirname, '..', 'uploads', type, filename);
 };

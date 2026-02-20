@@ -8,6 +8,7 @@ import Admin from '../models/Admin';
 import { createOrder, verifyPaymentSignature, verifyWebhookSignature, fetchPaymentDetails } from '../services/razorpayService';
 import { notifyParticipantsOfBooking } from './bookingController';
 import notificationService from '../services/notificationService';
+import pushNotificationService from '../services/pushNotificationService';
 import ENV from '../config/environment';
 import logger from '../utils/logger';
 
@@ -310,6 +311,14 @@ export const verifyPayment = asyncHandler(async (req, res) => {
         try {
           await notifyParticipantsOfBooking(appointment as any);
           logger.info(`Booking confirmation emails sent for appointment ${appointment._id} after payment verification`);
+          
+          // Send payment success push notification
+          await pushNotificationService.sendPaymentSuccess(
+            payment.user,
+            payment.amount,
+            'Appointment Booking',
+            payment._id.toString()
+          );
         } catch (emailError) {
           // Log error but don't fail the payment verification
           logger.error(`Failed to send booking confirmation emails for appointment ${appointment._id}`, emailError);

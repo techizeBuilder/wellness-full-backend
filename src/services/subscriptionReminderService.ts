@@ -4,6 +4,7 @@ import User from '../models/User';
 import Expert from '../models/Expert';
 import logger from '../utils/logger';
 import { sendSubscriptionRenewalReminderEmail } from './emailService';
+import pushNotificationService from './pushNotificationService';
 
 const RENEWAL_REMINDER_DAYS = 3; // Remind 3 days before expiry
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // Check every hour
@@ -56,6 +57,7 @@ const sendRenewalReminder = async (subscription: PopulatedSubscription) => {
   const userName = buildDisplayName(user);
   const expertName = buildDisplayName(expert);
 
+  // Send email reminder
   await sendSubscriptionRenewalReminderEmail({
     email: user.email,
     firstName: user.firstName || userName,
@@ -67,6 +69,14 @@ const sendRenewalReminder = async (subscription: PopulatedSubscription) => {
     monthlyPrice: subscription.monthlyPrice,
     autoRenewal: subscription.autoRenewal
   });
+
+  // Send push notification reminder
+  await pushNotificationService.sendSubscriptionExpiringSoon(
+    user._id || subscription.user,
+    subscription.planName,
+    RENEWAL_REMINDER_DAYS,
+    subscription._id.toString()
+  );
 
   return true;
 };

@@ -1,10 +1,10 @@
 import crypto from 'crypto';
+import mongoose, { SortOrder } from 'mongoose';
 import Expert, { IExpert } from '../models/Expert';
 import Appointment from '../models/Appointment';
 import BankAccount from '../models/BankAccount';
 import ExpertAvailability from '../models/ExpertAvailability';
 import Admin from '../models/Admin';
-import type { SortOrder } from 'mongoose';
 import { asyncHandler } from '../middlewares/errorHandler';
 import { generateToken, generateRefreshToken } from '../middlewares/auth';
 import { sendOTPEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/emailService';
@@ -1001,6 +1001,14 @@ const getExperts = asyncHandler(async (req, res) => {
 // @route   GET /api/experts/:id
 // @access  Public
 const getExpertById = asyncHandler(async (req, res) => {
+  // Validate ObjectId
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid expert ID format'
+    });
+  }
+
   const expert = await Expert.findOne({
     _id: req.params.id,
     isActive: true,

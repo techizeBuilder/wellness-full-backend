@@ -25,27 +25,34 @@ import bookingRoutes from './routes/bookingRoutes';
 import planRoutes from './routes/planRoutes';
 import subscriptionRoutes from './routes/subscriptionRoutes';
 import paymentRoutes from './routes/paymentRoutes';
+import contentRoutes from './routes/contentRoutes';
 import adminRoutes from './routes/admin/adminRoutes';
 import userRoutes from './routes/admin/userRoutes';
 import adminExpertRoutes from './routes/admin/expertRoutes';
 import adminSubscriptionRoutes from './routes/admin/subscriptionRoutes';
 import adminBookingRoutes from './routes/admin/bookingRoutes';
 import adminPaymentRoutes from './routes/admin/paymentRoutes';
+import adminContentRoutes from './routes/admin/contentRoutes';
 import adminDashboardRoutes from './routes/admin/dashboardRoutes';
 import adminReportsRoutes from './routes/admin/reportsRoutes';
 import notificationRoutes from './routes/notificationRoutes';
+import userNotificationRoutes from './routes/userNotificationRoutes';
 
 // Import seeders
 import { runSeeders } from './seeders';
 import { startAppointmentReminderScheduler } from './services/appointmentReminderService';
 import { startSubscriptionReminderScheduler } from './services/subscriptionReminderService';
 import { startSubscriptionExpiryScheduler } from './services/subscriptionExpiryService';
+import { initializeFirebase } from './services/fcmService';
 
 // Validate environment variables
 validateEnvironment();
 
 // Connect to MongoDB
 connectDB();
+
+// Initialize Firebase
+initializeFirebase();
 
 // Run seeders
 runSeeders().catch((err: Error) => {
@@ -60,7 +67,7 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
+})); 
 
 // CORS configuration
 app.use(cors(corsOptions));
@@ -121,6 +128,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/plans', planRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/contents', contentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/dashboard', adminDashboardRoutes);
 app.use('/api/admin/users', userRoutes);
@@ -128,8 +136,10 @@ app.use('/api/admin/experts', adminExpertRoutes);
 app.use('/api/admin/subscriptions', adminSubscriptionRoutes);
 app.use('/api/admin/bookings', adminBookingRoutes);
 app.use('/api/admin/payments', adminPaymentRoutes);
+app.use('/api/admin/contents', adminContentRoutes);
 app.use('/api/admin/reports', adminReportsRoutes);
 app.use('/api/admin/notifications', notificationRoutes);
+app.use('/api/user/notifications', userNotificationRoutes);
 
 // Default route
 app.get('/', (req: Request, res: Response) => {

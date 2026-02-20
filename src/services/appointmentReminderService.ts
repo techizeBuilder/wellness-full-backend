@@ -2,6 +2,7 @@ import ENV from '../config/environment';
 import Appointment, { IAppointment } from '../models/Appointment';
 import logger from '../utils/logger';
 import { sendSessionReminderEmail } from './emailService';
+import pushNotificationService from './pushNotificationService';
 
 const REMINDER_CHECK_INTERVAL_MS = 60 * 1000;
 const JOIN_WINDOW_MINUTES = Math.min(Math.max(ENV.AGORA_JOIN_WINDOW_MINUTES || 2, 0), 2);
@@ -57,6 +58,7 @@ const sendReminderForParticipant = async (
 
   const counterpartyName = buildDisplayName(participant === 'user' ? appointment.expert : appointment.user);
 
+  // Send email reminder
   await sendSessionReminderEmail({
     email: participantDoc.email,
     firstName: participantDoc.firstName || '',
@@ -66,6 +68,27 @@ const sendReminderForParticipant = async (
     leadMinutes: REMINDER_LEAD_MINUTES,
     joinWindowMinutes: JOIN_WINDOW_MINUTES
   });
+
+  // Send push notification reminder (only to users for now)
+  if (participant === 'user') {
+    try {
+      const timeString = startDateTime.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: true 
+      });
+      
+      await pushNotificationService.sendAppointmentReminder(
+        appointment.user,
+        counterpartyName,
+        timeString,
+        appointment._id.toString()
+      );
+    } catch (error) {
+      logger.error('Failed to send push notification reminder:', error);
+      // Don't fail the whole reminder if push notification fails
+    }
+  }
 
   if (participant === 'user') {
     appointment.userReminderSentAt = new Date();

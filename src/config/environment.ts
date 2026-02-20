@@ -18,6 +18,7 @@ interface Environment {
   MAX_FILE_SIZE: number;
   ALLOWED_FILE_TYPES: string;
   FRONTEND_URL: string | undefined;
+  BASE_URL: string | undefined;
   BCRYPT_ROUNDS: number;
   INIT_ADMIN_EMAIL: string | undefined;
   INIT_ADMIN_NAME: string | undefined;
@@ -32,6 +33,11 @@ interface Environment {
   RAZORPAY_KEY_ID?: string;
   RAZORPAY_KEY_SECRET?: string;
   RAZORPAY_WEBHOOK_SECRET?: string;
+  
+  // Firebase Cloud Messaging
+  FIREBASE_PROJECT_ID?: string;
+  FIREBASE_PRIVATE_KEY?: string;
+  FIREBASE_CLIENT_EMAIL?: string;
 }
 
 const ENV: Environment = {
@@ -64,6 +70,9 @@ const ENV: Environment = {
   // Frontend
   FRONTEND_URL: process.env.FRONTEND_URL,
   
+  // API Base URL
+  BASE_URL: process.env.API_BASE_URL || process.env.BASE_URL,
+  
   // Security
   BCRYPT_ROUNDS: parseInt(process.env.BCRYPT_ROUNDS || '12', 10),
   
@@ -84,7 +93,12 @@ const ENV: Environment = {
   // Razorpay
   RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
   RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,
-  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET
+  RAZORPAY_WEBHOOK_SECRET: process.env.RAZORPAY_WEBHOOK_SECRET,
+  
+  // Firebase Cloud Messaging
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+  FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
+  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL
 };
 
 export default ENV;

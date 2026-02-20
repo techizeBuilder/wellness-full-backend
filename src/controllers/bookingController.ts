@@ -10,6 +10,7 @@ import Plan from '../models/Plan';
 import { deleteFile, getFilePath, getFileUrl } from '../middlewares/upload';
 import logger from '../utils/logger';
 import { sendBookingConfirmationEmail, sendBookingStatusUpdateEmail } from '../services/emailService';
+import pushNotificationService from '../services/pushNotificationService';
 
 type ParticipantDetails = {
   firstName?: string;
@@ -162,19 +163,58 @@ const notifyCustomerOfStatusChange = async (appointment: PopulatedAppointment, s
     }
 
     const { startDateTime } = await getSessionDateTimes(appointment);
+    const expertName = buildDisplayName(appointment.expert, 'Your expert');
+    const appointmentId = appointment._id.toString();
 
+    // Send email notification
     await sendBookingStatusUpdateEmail({
       email: appointment.user.email,
       firstName: appointment.user.firstName || buildDisplayName(appointment.user, 'there'),
-      counterpartyName: buildDisplayName(appointment.expert, 'Your expert'),
+      counterpartyName: expertName,
       status,
       sessionDateTime: startDateTime,
       consultationMethod: appointment.consultationMethod,
       sessionType: appointment.sessionType,
       planName: appointment.planName || undefined
     });
+
+    // Send push notification
+    const dateString = startDateTime.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric'
+    });
+    const timeString = startDateTime.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+
+    if (status === 'confirmed') {
+      await pushNotificationService.sendAppointmentConfirmed(
+        (appointment.user as any)._id || appointment.user,
+        expertName,
+        dateString,
+        timeString,
+        appointmentId
+      );
+    } else if (status === 'cancelled') {
+      await pushNotificationService.sendAppointmentCancelled(
+        (appointment.user as any)._id || appointment.user,
+        expertName,
+        undefined,
+        appointmentId
+      );
+    } else if (status === 'rejected') {
+      await pushNotificationService.sendExpertRejectedAppointment(
+        (appointment.user as any)._id || appointment.user,
+        expertName,
+        undefined,
+        appointmentId
+      );
+    }
   } catch (error) {
-    logger.error(`Failed to send booking status email (${status}) for appointment ${appointment._id}`, error);
+    logger.error(`Failed to send booking status notifications (${status}) for appointment ${appointment._id}`, error);
   }
 };
 
