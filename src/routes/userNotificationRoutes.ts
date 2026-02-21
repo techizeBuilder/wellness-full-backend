@@ -28,6 +28,29 @@ router.post('/fcm-token', async (req: Request, res: Response) => {
       });
     }
 
+    // Reject placeholder tokens and clean any already stored (e.g. local-android-* when Firebase not configured)
+    if (fcmToken.startsWith('local-')) {
+      const user = await User.findById(userId);
+      if (user) {
+        const isLocal = (t: string) => t.startsWith('local-');
+        if (user.fcmTokens?.length) {
+          user.fcmTokens = user.fcmTokens.filter((t) => !isLocal(t));
+          if (user.fcmToken && isLocal(user.fcmToken)) user.fcmToken = user.fcmTokens[0] ?? null;
+        }
+        if (user.expoPushTokens?.length) {
+          user.expoPushTokens = user.expoPushTokens.filter((t) => !isLocal(t));
+          if (user.expoPushToken && isLocal(user.expoPushToken)) user.expoPushToken = user.expoPushTokens[0] ?? null;
+        }
+        await user.save();
+      }
+      logger.info(`Skipping invalid/placeholder token for user ${userId}`);
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        message: 'Token not saved (invalid or simulator token). Configure Firebase for Android push.',
+        data: { tokenType: null, skipped: true },
+      });
+    }
+
     const user = await User.findById(userId);
 
     if (!user) {
