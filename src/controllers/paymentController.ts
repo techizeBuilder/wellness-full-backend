@@ -306,37 +306,11 @@ export const verifyPayment = asyncHandler(async (req, res) => {
       }).populate('user', 'firstName lastName email')
         .populate('expert', 'firstName lastName specialization profileImage email');
 
-          // Send booking confirmation emails and push notifications after payment is successful
+          // Send booking confirmation emails only (push is sent once from webhook to avoid duplicates)
           if (appointment) {
             try {
               await notifyParticipantsOfBooking(appointment as any);
               logger.info(`Booking confirmation emails sent for appointment ${appointment._id} after payment verification`);
-
-              // Send payment success push notification
-              await pushNotificationService.sendPaymentSuccess(
-                payment.user,
-                payment.amount,
-                'Appointment Booking',
-                payment._id.toString()
-              );
-
-              // Send appointment confirmed push so user gets a clear booking confirmation (when we have session date/time)
-              if (appointment.sessionDate && appointment.startTime) {
-                const expertName = [appointment.expert?.firstName, appointment.expert?.lastName].filter(Boolean).join(' ') || 'Your expert';
-                const sessionDate = new Date(appointment.sessionDate);
-                const dateString = sessionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                const [startHour, startMin] = appointment.startTime.split(':').map(Number);
-                const timeDate = new Date();
-                timeDate.setHours(startHour, startMin, 0, 0);
-                const timeString = timeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-                await pushNotificationService.sendAppointmentConfirmed(
-                  payment.user,
-                  expertName,
-                  dateString,
-                  timeString,
-                  appointment._id.toString()
-                );
-              }
             } catch (emailError) {
               // Log error but don't fail the payment verification
               logger.error(`Failed to send booking confirmation emails for appointment ${appointment._id}`, emailError);
