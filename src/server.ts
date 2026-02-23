@@ -95,7 +95,7 @@ app.use((req: Request, res: Response, next) => {
 app.use(compression());
 
 // Body parsing middleware
-app.use(express.json({ limit: '1000mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Logging middleware
