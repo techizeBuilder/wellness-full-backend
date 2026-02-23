@@ -426,7 +426,8 @@ export const handleWebhook = asyncHandler(async (req, res) => {
                 payment._id.toString()
               );
               if (appointment.sessionDate && appointment.startTime) {
-                const expertName = [appointment.expert?.firstName, appointment.expert?.lastName].filter(Boolean).join(' ') || 'Your expert';
+                const expert = appointment.expert as any;
+                const expertName = [expert?.firstName, expert?.lastName].filter(Boolean).join(' ') || 'Your expert';
                 const sessionDate = new Date(appointment.sessionDate);
                 const dateString = sessionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                 const [startHour, startMin] = appointment.startTime.split(':').map(Number);
