@@ -69,7 +69,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 })); 
 
-// CORS configuration
+// CORS configuration - MUST be first
 app.use(cors(corsOptions));
 
 // Additional CORS headers for preflight requests
@@ -77,11 +77,18 @@ app.use((req: Request, res: Response, next) => {
   const origin = req.headers.origin;
   logger.debug(`${req.method} request to ${req.path} from origin: ${origin}`);
   
-  res.header('Access-Control-Allow-Origin', origin || '*');
+  // Only set CORS headers if origin is in allowed list or if CORS allows it
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS,POST,PUT,DELETE,PATCH');
   res.header('Access-Control-Allow-Headers', 'Origin,X-Requested-With,Content-Type,Accept,Authorization,Cache-Control,X-Access-Token');
   res.header('Access-Control-Max-Age', '86400'); // 24 hours
+  res.header('Access-Control-Expose-Headers', 'Content-Type,Authorization');
   
   if (req.method === 'OPTIONS') {
     logger.debug('Handling OPTIONS preflight request');
@@ -94,9 +101,9 @@ app.use((req: Request, res: Response, next) => {
 // Compression middleware
 app.use(compression());
 
-// Body parsing middleware
+// Body parsing middleware - with proper limits for file uploads
 app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Logging middleware
 if (ENV.NODE_ENV === 'development') {
