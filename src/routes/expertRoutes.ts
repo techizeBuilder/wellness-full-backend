@@ -18,7 +18,8 @@ import {
   getAvailability,
   createOrUpdateAvailability,
   uploadCertificates,
-  deleteCertificate
+  deleteCertificate,
+  getExpertDashboardNotifications
 } from '../controllers/expertController';
 import { protect, authorize, optionalAuth } from '../middlewares/auth';
 import { uploadProfileImage, uploadCertificates as uploadCertificatesMiddleware, uploadExpertRegistration, handleUploadError } from '../middlewares/upload';
@@ -103,6 +104,9 @@ router.use(protectExpertRoutes); // All routes below this middleware are protect
 // Bank account routes - MUST come before /:id route to avoid route conflicts
 router.get('/bank-account', getBankAccount);
 router.post('/bank-account', validate(bankAccountSchema), createOrUpdateBankAccount);
+
+// Notifications - expert dashboard dynamic notifications
+router.get('/notifications', getExpertDashboardNotifications);
 
 // Availability routes - MUST come before /:id route to avoid route conflicts
 router.get('/availability', getAvailability);

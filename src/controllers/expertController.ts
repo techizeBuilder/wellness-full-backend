@@ -3,6 +3,7 @@ import mongoose, { SortOrder } from 'mongoose';
 import Expert, { IExpert } from '../models/Expert';
 import Appointment from '../models/Appointment';
 import BankAccount from '../models/BankAccount';
+import UserSubscription from '../models/UserSubscription';
 import ExpertAvailability from '../models/ExpertAvailability';
 import Admin from '../models/Admin';
 import { asyncHandler } from '../middlewares/errorHandler';
@@ -1560,6 +1561,94 @@ const deleteCertificate = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get expert dashboard notifications (dynamic, real-time counts)
+// @route   GET /api/experts/notifications
+// @access  Private (Expert)
+const getExpertDashboardNotifications = asyncHandler(async (req, res) => {
+  const expertId = (req as any).user._id;
+
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Run all queries in parallel for performance
+  const [newBookingsCount, planRenewalsCount, subscriptionUpgradesCount, unreadFeedbackCount] =
+    await Promise.all([
+      // 1. New (pending) bookings awaiting expert confirmation
+      Appointment.countDocuments({
+        expert: expertId,
+        status: 'pending',
+      }),
+
+      // 2. Plan renewals: monthly subscriptions renewed in the last 7 days
+      UserSubscription.countDocuments({
+        expert: expertId,
+        planType: 'monthly',
+        updatedAt: { $gte: sevenDaysAgo },
+        status: 'active',
+      }),
+
+      // 3. Subscription upgrades: new subscriptions created in the last 7 days
+      UserSubscription.countDocuments({
+        expert: expertId,
+        createdAt: { $gte: sevenDaysAgo },
+        status: 'active',
+      }),
+
+      // 4. Appointments with new client feedback (submitted in last 7 days) not yet acknowledged
+      Appointment.countDocuments({
+        expert: expertId,
+        feedbackSubmittedAt: { $gte: sevenDaysAgo },
+        feedbackRating: { $exists: true },
+      }),
+    ]);
+
+  const notifications: Array<{ id: number; icon: string; text: string; count: number }> = [];
+
+  if (newBookingsCount > 0) {
+    notifications.push({
+      id: 1,
+      icon: '🔔',
+      text: `${newBookingsCount} New Booking${newBookingsCount > 1 ? 's' : ''}`,
+      count: newBookingsCount,
+    });
+  }
+
+  if (planRenewalsCount > 0) {
+    notifications.push({
+      id: 2,
+      icon: '✅',
+      text: `${planRenewalsCount} Plan Renewal${planRenewalsCount > 1 ? 's' : ''}`,
+      count: planRenewalsCount,
+    });
+  }
+
+  if (unreadFeedbackCount > 0) {
+    notifications.push({
+      id: 3,
+      icon: '💬',
+      text: `${unreadFeedbackCount} New Client Feedback${unreadFeedbackCount > 1 ? 's' : ''}`,
+      count: unreadFeedbackCount,
+    });
+  }
+
+  if (subscriptionUpgradesCount > 0) {
+    notifications.push({
+      id: 4,
+      icon: '📦',
+      text: `${subscriptionUpgradesCount} New Subscription${subscriptionUpgradesCount > 1 ? 's' : ''}`,
+      count: subscriptionUpgradesCount,
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      notifications,
+      totalCount: notifications.reduce((sum, n) => sum + n.count, 0),
+    },
+  });
+});
+
 export {
   registerExpert,
   loginExpert,
@@ -1578,5 +1667,6 @@ export {
   getAvailability,
   createOrUpdateAvailability,
   uploadCertificates,
-  deleteCertificate
+  deleteCertificate,
+  getExpertDashboardNotifications
 };
