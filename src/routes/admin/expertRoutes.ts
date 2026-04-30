@@ -1,4 +1,4 @@
-import express from 'express';
+import express from "express";
 const router = express.Router();
 
 import {
@@ -9,47 +9,59 @@ import {
   updateExpert,
   deleteExpert,
   toggleExpertStatus,
-  toggleExpertVerification
-} from '../../controllers/admin/expertController';
+  toggleExpertVerification,
+  getExpertEarnings,
+  updateCommissionRate,
+} from "../../controllers/admin/expertController";
 
-import { adminProtect, hasPermission } from '../../middlewares/admin/adminAuth';
+import { adminProtect, hasPermission } from "../../middlewares/admin/adminAuth";
 
 // All routes require admin authentication
 router.use(adminProtect);
 
 // GET /api/admin/experts/stats - Get expert statistics
-router.get('/stats', getExpertStats);
+router.get("/stats", getExpertStats);
+
+// GET /api/admin/experts/earnings - Get per-expert earnings + admin commission
+router.get("/earnings", getExpertEarnings);
+
+// PATCH /api/admin/experts/commission-rate - Update commission rate
+router.patch("/commission-rate", updateCommissionRate);
 
 // GET /api/admin/experts/test - Test endpoint
-router.get('/test', (req, res) => {
-  res.json({ success: true, message: 'Expert routes working', timestamp: new Date() });
+router.get("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Expert routes working",
+    timestamp: new Date(),
+  });
 });
 
 // GET /api/admin/experts - Get all experts
-router.get('/', getExperts);
+router.get("/", getExperts);
 
 // GET /api/admin/experts/:id - Get expert by ID
-router.get('/:id', getExpertById);
+router.get("/:id", getExpertById);
 
 // POST /api/admin/experts - Create new expert
-router.post('/', createExpert);
+router.post("/", createExpert);
 
 // PUT /api/admin/experts/:id - Update expert
-router.put('/:id', updateExpert);
+router.put("/:id", updateExpert);
 
 // PUT /api/admin/experts/:id/status - Toggle expert active status (alternative endpoint)
-router.put('/:id/status', toggleExpertStatus);
+router.put("/:id/status", toggleExpertStatus);
 
 // DELETE /api/admin/experts/:id - Delete expert
-router.delete('/:id', deleteExpert);
+router.delete("/:id", deleteExpert);
 
 // PATCH /api/admin/experts/:id/toggle-status - Toggle expert active status
-router.patch('/:id/toggle-status', toggleExpertStatus);
+router.patch("/:id/toggle-status", toggleExpertStatus);
 
 // PUT /api/admin/experts/:id/toggle-status - Toggle expert active status (alternative method)
-router.put('/:id/toggle-status', toggleExpertStatus);
+router.put("/:id/toggle-status", toggleExpertStatus);
 
 // PATCH /api/admin/experts/:id/toggle-verification - Toggle expert verification status
-router.patch('/:id/toggle-verification', toggleExpertVerification);
+router.patch("/:id/toggle-verification", toggleExpertVerification);
 
 export default router;

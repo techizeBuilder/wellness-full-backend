@@ -1,35 +1,47 @@
-import { asyncHandler } from '../middlewares/errorHandler';
-import Payment from '../models/Payment';
-import Appointment from '../models/Appointment';
-import UserSubscription from '../models/UserSubscription';
-import Plan from '../models/Plan';
-import Expert from '../models/Expert';
-import Admin from '../models/Admin';
-import { createOrder, verifyPaymentSignature, verifyWebhookSignature, fetchPaymentDetails } from '../services/razorpayService';
-import { notifyParticipantsOfBooking } from './bookingController';
-import notificationService from '../services/notificationService';
-import pushNotificationService from '../services/pushNotificationService';
-import ENV from '../config/environment';
-import logger from '../utils/logger';
+import { asyncHandler } from "../middlewares/errorHandler";
+import Payment from "../models/Payment";
+import Appointment from "../models/Appointment";
+import UserSubscription from "../models/UserSubscription";
+import Plan from "../models/Plan";
+import Expert from "../models/Expert";
+import Admin from "../models/Admin";
+import {
+  createOrder,
+  verifyPaymentSignature,
+  verifyWebhookSignature,
+  fetchPaymentDetails,
+} from "../services/razorpayService";
+import { notifyParticipantsOfBooking } from "./bookingController";
+import notificationService from "../services/notificationService";
+import pushNotificationService from "../services/pushNotificationService";
+import ENV from "../config/environment";
+import logger from "../utils/logger";
 
 // @desc    Create a payment order
 // @route   POST /api/payments/create-order
 // @access  Private (User)
 export const createPaymentOrder = asyncHandler(async (req, res) => {
   const currentUser = req.user;
-  const { amount, currency = 'INR', appointmentId, subscriptionId, planId, description } = req.body;
+  const {
+    amount,
+    currency = "INR",
+    appointmentId,
+    subscriptionId,
+    planId,
+    description,
+  } = req.body;
 
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   if (!amount || amount <= 0) {
     return res.status(400).json({
       success: false,
-      message: 'Valid amount is required'
+      message: "Valid amount is required",
     });
   }
 
@@ -37,7 +49,7 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
   if (!appointmentId && !subscriptionId && !planId) {
     return res.status(400).json({
       success: false,
-      message: 'Either appointmentId, subscriptionId, or planId is required'
+      message: "Either appointmentId, subscriptionId, or planId is required",
     });
   }
 
@@ -46,20 +58,22 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
 
   // If appointmentId is provided, validate it
   if (appointmentId) {
-    const appointment = await Appointment.findById(appointmentId)
-      .populate('expert', '_id');
-    
+    const appointment = await Appointment.findById(appointmentId).populate(
+      "expert",
+      "_id",
+    );
+
     if (!appointment) {
       return res.status(404).json({
         success: false,
-        message: 'Appointment not found'
+        message: "Appointment not found",
       });
     }
 
     if (appointment.user.toString() !== currentUser._id.toString()) {
       return res.status(403).json({
         success: false,
-        message: 'You are not authorized to pay for this appointment'
+        message: "You are not authorized to pay for this appointment",
       });
     }
 
@@ -72,18 +86,18 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
   // If subscriptionId is provided, validate it
   if (subscriptionId) {
     const subscription = await UserSubscription.findById(subscriptionId);
-    
+
     if (!subscription) {
       return res.status(404).json({
         success: false,
-        message: 'Subscription not found'
+        message: "Subscription not found",
       });
     }
 
     if (subscription.user.toString() !== currentUser._id.toString()) {
       return res.status(403).json({
         success: false,
-        message: 'You are not authorized to pay for this subscription'
+        message: "You are not authorized to pay for this subscription",
       });
     }
 
@@ -95,12 +109,12 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
 
   // If planId is provided, validate it
   if (planId) {
-    const plan = await Plan.findById(planId).populate('expert', '_id');
-    
+    const plan = await Plan.findById(planId).populate("expert", "_id");
+
     if (!plan) {
       return res.status(404).json({
         success: false,
-        message: 'Plan not found'
+        message: "Plan not found",
       });
     }
 
@@ -112,10 +126,10 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
 
   // Check if Razorpay is configured
   if (!ENV.RAZORPAY_KEY_ID || !ENV.RAZORPAY_KEY_SECRET) {
-    logger.error('Razorpay credentials not configured');
+    logger.error("Razorpay credentials not configured");
     return res.status(500).json({
       success: false,
-      message: 'Payment service is not configured. Please contact support.'
+      message: "Payment service is not configured. Please contact support.",
     });
   }
 
@@ -125,7 +139,7 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
     if (isNaN(numericAmount) || !isFinite(numericAmount)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid amount value'
+        message: "Invalid amount value",
       });
     }
 
@@ -133,19 +147,19 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
     if (numericAmount < 1) {
       return res.status(400).json({
         success: false,
-        message: 'Amount must be at least 1 INR'
+        message: "Amount must be at least 1 INR",
       });
     }
 
     // Log payment order creation attempt
-    logger.info('Creating Razorpay order', {
+    logger.info("Creating Razorpay order", {
       amount: numericAmount,
       currency,
       appointmentId,
       subscriptionId,
       planId,
       userId: currentUser._id.toString(),
-      hasRazorpayKey: !!ENV.RAZORPAY_KEY_ID
+      hasRazorpayKey: !!ENV.RAZORPAY_KEY_ID,
     });
 
     // Create Razorpay order
@@ -155,9 +169,9 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
     const receipt = `RCP${timestamp}${userId}`.slice(0, 40); // Max 40 chars
     const razorpayOrder = await createOrder(numericAmount, currency, receipt, {
       userId: currentUser._id.toString(),
-      appointmentId: appointmentId || '',
-      subscriptionId: subscriptionId || '',
-      planId: planId || ''
+      appointmentId: appointmentId || "",
+      subscriptionId: subscriptionId || "",
+      planId: planId || "",
     });
 
     // Create payment record in database
@@ -170,9 +184,9 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
       razorpayOrderId: razorpayOrder.id,
       amount: numericAmount,
       currency,
-      status: 'pending',
+      status: "pending",
       description: paymentDescription,
-      receipt: razorpayOrder.receipt
+      receipt: razorpayOrder.receipt,
     });
 
     res.status(201).json({
@@ -182,15 +196,15 @@ export const createPaymentOrder = asyncHandler(async (req, res) => {
         orderId: razorpayOrder.id,
         amount: Number(razorpayOrder.amount) / 100, // Convert from paise to rupees
         currency: razorpayOrder.currency,
-        key: ENV.RAZORPAY_KEY_ID // Frontend needs this for Razorpay Checkout
+        key: ENV.RAZORPAY_KEY_ID, // Frontend needs this for Razorpay Checkout
       },
-      message: 'Payment order created successfully'
+      message: "Payment order created successfully",
     });
   } catch (error: any) {
-    logger.error('Error creating payment order', error);
+    logger.error("Error creating payment order", error);
     res.status(500).json({
       success: false,
-      message: error.message || 'Failed to create payment order'
+      message: error.message || "Failed to create payment order",
     });
   }
 });
@@ -205,14 +219,14 @@ export const verifyPayment = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   if (!paymentId || !orderId || !signature) {
     return res.status(400).json({
       success: false,
-      message: 'paymentId, orderId, and signature are required'
+      message: "paymentId, orderId, and signature are required",
     });
   }
 
@@ -220,102 +234,130 @@ export const verifyPayment = asyncHandler(async (req, res) => {
   const payment = await Payment.findOne({
     _id: paymentId,
     user: currentUser._id,
-    razorpayOrderId: orderId
+    razorpayOrderId: orderId,
   });
 
   if (!payment) {
     return res.status(404).json({
       success: false,
-      message: 'Payment not found'
+      message: "Payment not found",
     });
   }
 
-  if (payment.status === 'completed') {
+  if (payment.status === "completed") {
     return res.status(400).json({
       success: false,
-      message: 'Payment already verified'
+      message: "Payment already verified",
     });
   }
 
   // Verify payment signature
-  const isValidSignature = verifyPaymentSignature(orderId, razorpayPaymentId || orderId, signature);
+  const isValidSignature = verifyPaymentSignature(
+    orderId,
+    razorpayPaymentId || orderId,
+    signature,
+  );
 
   if (!isValidSignature) {
-    payment.status = 'failed';
+    payment.status = "failed";
     payment.failedAt = new Date();
-    payment.notes = 'Invalid payment signature';
+    payment.notes = "Invalid payment signature";
     await payment.save();
 
     return res.status(400).json({
       success: false,
-      message: 'Invalid payment signature'
+      message: "Invalid payment signature",
     });
   }
 
   try {
     // Fetch payment details from Razorpay to confirm
-    const razorpayPayment = await fetchPaymentDetails(razorpayPaymentId || orderId);
+    const razorpayPayment = await fetchPaymentDetails(
+      razorpayPaymentId || orderId,
+    );
 
-    if (razorpayPayment.status !== 'captured' && razorpayPayment.status !== 'authorized') {
-      payment.status = 'failed';
+    if (
+      razorpayPayment.status !== "captured" &&
+      razorpayPayment.status !== "authorized"
+    ) {
+      payment.status = "failed";
       payment.failedAt = new Date();
       payment.notes = `Payment status: ${razorpayPayment.status}`;
       await payment.save();
 
       return res.status(400).json({
         success: false,
-        message: `Payment not successful. Status: ${razorpayPayment.status}`
+        message: `Payment not successful. Status: ${razorpayPayment.status}`,
       });
     }
 
     // Mark payment as completed
-    await (payment as any).markAsCompleted(razorpayPaymentId || orderId, signature);
+    await (payment as any).markAsCompleted(
+      razorpayPaymentId || orderId,
+      signature,
+    );
 
     // Create notification for all admins
     const admins = await Admin.find();
     if (admins.length > 0) {
       const paymentAmount = payment.amount;
-      const paymentType = payment.appointment ? 'Appointment' : 'Subscription';
-      logger.info(`Creating payment notifications for ${admins.length} admins: ₹${paymentAmount}`);
-      
+      const paymentType = payment.appointment ? "Appointment" : "Subscription";
+      logger.info(
+        `Creating payment notifications for ${admins.length} admins: ₹${paymentAmount}`,
+      );
+
       for (const admin of admins) {
         const notif = await notificationService.createNotification(
           admin._id.toString(),
-          'payment',
-          'Payment Received',
+          "payment",
+          "Payment Received",
           `Payment of ₹${paymentAmount} received for ${paymentType}`,
           {
             paymentId: payment._id,
             amount: paymentAmount,
-            paymentType: payment.appointment ? 'appointment' : 'subscription'
-          }
+            paymentType: payment.appointment ? "appointment" : "subscription",
+          },
         );
-        logger.info(`Created payment notification for admin ${admin._id}: ${notif ? notif._id : 'FAILED'}`);
+        logger.info(
+          `Created payment notification for admin ${admin._id}: ${notif ? notif._id : "FAILED"}`,
+        );
       }
     } else {
-      logger.warn('No admins found to send payment notification');
+      logger.warn("No admins found to send payment notification");
     }
 
     // Update related records and send booking confirmation emails
     if (payment.appointment) {
-      const appointment = await Appointment.findByIdAndUpdate(payment.appointment, {
-        $set: { 
-          paymentStatus: 'paid',
-          status: 'confirmed' // Update status to confirmed after payment
-        }
-      }).populate('user', 'firstName lastName email')
-        .populate('expert', 'firstName lastName specialization profileImage email');
+      const appointment = await Appointment.findByIdAndUpdate(
+        payment.appointment,
+        {
+          $set: {
+            paymentStatus: "paid",
+            status: "confirmed", // Update status to confirmed after payment
+          },
+        },
+      )
+        .populate("user", "firstName lastName email")
+        .populate(
+          "expert",
+          "firstName lastName specialization profileImage email",
+        );
 
-          // Send booking confirmation emails only (push is sent once from webhook to avoid duplicates)
-          if (appointment) {
-            try {
-              await notifyParticipantsOfBooking(appointment as any);
-              logger.info(`Booking confirmation emails sent for appointment ${appointment._id} after payment verification`);
-            } catch (emailError) {
-              // Log error but don't fail the payment verification
-              logger.error(`Failed to send booking confirmation emails for appointment ${appointment._id}`, emailError);
-            }
-          }
+      // Send booking confirmation emails only (push is sent once from webhook to avoid duplicates)
+      if (appointment) {
+        try {
+          await notifyParticipantsOfBooking(appointment as any);
+          logger.info(
+            `Booking confirmation emails sent for appointment ${appointment._id} after payment verification`,
+          );
+        } catch (emailError) {
+          // Log error but don't fail the payment verification
+          logger.error(
+            `Failed to send booking confirmation emails for appointment ${appointment._id}`,
+            emailError,
+          );
+        }
+      }
     }
 
     res.status(200).json({
@@ -323,20 +365,20 @@ export const verifyPayment = asyncHandler(async (req, res) => {
       data: {
         paymentId: payment._id,
         status: payment.status,
-        amount: payment.amount
+        amount: payment.amount,
       },
-      message: 'Payment verified successfully'
+      message: "Payment verified successfully",
     });
   } catch (error: any) {
-    logger.error('Error verifying payment', error);
-    payment.status = 'failed';
+    logger.error("Error verifying payment", error);
+    payment.status = "failed";
     payment.failedAt = new Date();
     payment.notes = error.message;
     await payment.save();
 
     res.status(500).json({
       success: false,
-      message: 'Failed to verify payment'
+      message: "Failed to verify payment",
     });
   }
 });
@@ -345,13 +387,13 @@ export const verifyPayment = asyncHandler(async (req, res) => {
 // @route   POST /api/payments/webhook
 // @access  Public (Razorpay)
 export const handleWebhook = asyncHandler(async (req, res) => {
-  const signature = req.headers['x-razorpay-signature'] as string;
+  const signature = req.headers["x-razorpay-signature"] as string;
   const payload = JSON.stringify(req.body);
 
   if (!signature) {
     return res.status(400).json({
       success: false,
-      message: 'Missing webhook signature'
+      message: "Missing webhook signature",
     });
   }
 
@@ -359,115 +401,146 @@ export const handleWebhook = asyncHandler(async (req, res) => {
   const isValidSignature = verifyWebhookSignature(payload, signature);
 
   if (!isValidSignature) {
-    logger.warn('Invalid webhook signature received');
+    logger.warn("Invalid webhook signature received");
     return res.status(400).json({
       success: false,
-      message: 'Invalid webhook signature'
+      message: "Invalid webhook signature",
     });
   }
 
   const event = req.body.event;
   const paymentData = req.body.payload?.payment?.entity;
 
-  logger.info(`Razorpay webhook received: ${event}`, { paymentId: paymentData?.id });
+  logger.info(`Razorpay webhook received: ${event}`, {
+    paymentId: paymentData?.id,
+  });
 
   try {
-    if (event === 'payment.captured' || event === 'payment.authorized') {
+    if (event === "payment.captured" || event === "payment.authorized") {
       // Find payment by Razorpay payment ID
       const payment = await Payment.findOne({
-        razorpayPaymentId: paymentData.id
+        razorpayPaymentId: paymentData.id,
       });
 
-      if (payment && payment.status !== 'completed') {
+      if (payment && payment.status !== "completed") {
         await (payment as any).markAsCompleted(paymentData.id);
 
         // Create notification for all admins
         const admins = await Admin.find();
         if (admins.length > 0) {
           const paymentAmount = payment.amount;
-          const paymentType = payment.appointment ? 'Appointment' : 'Subscription';
-          
+          const paymentType = payment.appointment
+            ? "Appointment"
+            : "Subscription";
+
           for (const admin of admins) {
             await notificationService.createNotification(
               admin._id.toString(),
-              'payment',
-              'Payment Received',
+              "payment",
+              "Payment Received",
               `Payment of ₹${paymentAmount} received for ${paymentType}`,
               {
                 paymentId: payment._id,
                 amount: paymentAmount,
-                paymentType: payment.appointment ? 'appointment' : 'subscription'
-              }
+                paymentType: payment.appointment
+                  ? "appointment"
+                  : "subscription",
+              },
             );
           }
         }
 
         // Update related records and send booking confirmation emails
         if (payment.appointment) {
-          const appointment = await Appointment.findByIdAndUpdate(payment.appointment, {
-            $set: { 
-              paymentStatus: 'paid',
-              status: 'confirmed' // Update status to confirmed after payment
-            }
-          }).populate('user', 'firstName lastName email')
-            .populate('expert', 'firstName lastName specialization profileImage email');
+          const appointment = await Appointment.findByIdAndUpdate(
+            payment.appointment,
+            {
+              $set: {
+                paymentStatus: "paid",
+                status: "confirmed", // Update status to confirmed after payment
+              },
+            },
+          )
+            .populate("user", "firstName lastName email")
+            .populate(
+              "expert",
+              "firstName lastName specialization profileImage email",
+            );
 
           // Send booking confirmation emails and push notifications after payment is successful
           if (appointment) {
             try {
               await notifyParticipantsOfBooking(appointment as any);
-              logger.info(`Booking confirmation emails sent for appointment ${appointment._id} via webhook`);
+              logger.info(
+                `Booking confirmation emails sent for appointment ${appointment._id} via webhook`,
+              );
 
               // Send push notifications so user gets booking confirmation on device
               await pushNotificationService.sendPaymentSuccess(
                 payment.user,
                 payment.amount,
-                'Appointment Booking',
-                payment._id.toString()
+                "Appointment Booking",
+                payment._id.toString(),
               );
               if (appointment.sessionDate && appointment.startTime) {
                 const expert = appointment.expert as any;
-                const expertName = [expert?.firstName, expert?.lastName].filter(Boolean).join(' ') || 'Your expert';
+                const expertName =
+                  [expert?.firstName, expert?.lastName]
+                    .filter(Boolean)
+                    .join(" ") || "Your expert";
                 const sessionDate = new Date(appointment.sessionDate);
-                const dateString = sessionDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                const [startHour, startMin] = appointment.startTime.split(':').map(Number);
+                const dateString = sessionDate.toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                });
+                const [startHour, startMin] = appointment.startTime
+                  .split(":")
+                  .map(Number);
                 const timeDate = new Date();
                 timeDate.setHours(startHour, startMin, 0, 0);
-                const timeString = timeDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                const timeString = timeDate.toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: true,
+                });
                 await pushNotificationService.sendAppointmentConfirmed(
                   payment.user,
                   expertName,
                   dateString,
                   timeString,
-                  appointment._id.toString()
+                  appointment._id.toString(),
                 );
               }
             } catch (emailError) {
               // Log error but don't fail the webhook processing
-              logger.error(`Failed to send booking confirmation emails for appointment ${appointment._id}`, emailError);
+              logger.error(
+                `Failed to send booking confirmation emails for appointment ${appointment._id}`,
+                emailError,
+              );
             }
           }
         }
 
         logger.info(`Payment ${payment._id} marked as completed via webhook`);
       }
-    } else if (event === 'payment.failed') {
+    } else if (event === "payment.failed") {
       const payment = await Payment.findOne({
-        razorpayPaymentId: paymentData.id
+        razorpayPaymentId: paymentData.id,
       });
 
-      if (payment && payment.status !== 'failed') {
-        await (payment as any).markAsFailed('Payment failed via Razorpay');
+      if (payment && payment.status !== "failed") {
+        await (payment as any).markAsFailed("Payment failed via Razorpay");
         logger.info(`Payment ${payment._id} marked as failed via webhook`);
       }
     }
 
-    res.status(200).json({ success: true, message: 'Webhook processed' });
+    res.status(200).json({ success: true, message: "Webhook processed" });
   } catch (error: any) {
-    logger.error('Error processing webhook', error);
+    logger.error("Error processing webhook", error);
     res.status(500).json({
       success: false,
-      message: 'Error processing webhook'
+      message: "Error processing webhook",
     });
   }
 });
@@ -482,7 +555,7 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
@@ -491,9 +564,9 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
   const skip = (pageNumber - 1) * limitNumber;
 
   const payments = await Payment.find({ user: currentUser._id })
-    .populate('expert', 'firstName lastName specialization')
-    .populate('appointment', 'sessionDate startTime duration')
-    .populate('subscription', 'planName')
+    .populate("expert", "firstName lastName specialization")
+    .populate("appointment", "sessionDate startTime duration")
+    .populate("subscription", "planName")
     .sort({ createdAt: -1 })
     .limit(limitNumber)
     .skip(skip);
@@ -507,9 +580,9 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
       pagination: {
         current: pageNumber,
         pages: Math.ceil(total / limitNumber),
-        total
-      }
-    }
+        total,
+      },
+    },
   });
 });
 
@@ -522,23 +595,25 @@ export const getExpertEarnings = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   // Find expert by user ID or email
   const userId = currentUser._id.toString();
   const userEmail = currentUser.email || (currentUser as any).email;
-  
-  let expert = await Expert.findById(userId).select('_id');
+
+  let expert = await Expert.findById(userId).select("_id");
   if (!expert && userEmail) {
-    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select(
+      "_id",
+    );
   }
 
   if (!expert) {
     return res.status(404).json({
       success: false,
-      message: 'Expert profile not found'
+      message: "Expert profile not found",
     });
   }
 
@@ -554,80 +629,109 @@ export const getExpertEarnings = asyncHandler(async (req, res) => {
   startOfMonth.setHours(0, 0, 0, 0);
 
   // Calculate earnings for different timeframes
-  const [dailyEarnings, weeklyEarnings, monthlyEarnings, totalEarnings] = await Promise.all([
-    // Daily earnings
-    Payment.aggregate([
-      {
-        $match: {
-          expert: expert._id,
-          status: 'completed',
-          paidAt: { $gte: startOfToday }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$amount' }
-        }
-      }
-    ]),
-    // Weekly earnings
-    Payment.aggregate([
-      {
-        $match: {
-          expert: expert._id,
-          status: 'completed',
-          paidAt: { $gte: startOfWeek }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$amount' }
-        }
-      }
-    ]),
-    // Monthly earnings
-    Payment.aggregate([
-      {
-        $match: {
-          expert: expert._id,
-          status: 'completed',
-          paidAt: { $gte: startOfMonth }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$amount' }
-        }
-      }
-    ]),
-    // Total earnings
-    Payment.aggregate([
-      {
-        $match: {
-          expert: expert._id,
-          status: 'completed'
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$amount' }
-        }
-      }
-    ])
-  ]);
+  const [dailyEarnings, weeklyEarnings, monthlyEarnings, totalEarnings] =
+    await Promise.all([
+      // Daily earnings
+      Payment.aggregate([
+        {
+          $match: {
+            expert: expert._id,
+            status: "completed",
+            paidAt: { $gte: startOfToday },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+      // Weekly earnings
+      Payment.aggregate([
+        {
+          $match: {
+            expert: expert._id,
+            status: "completed",
+            paidAt: { $gte: startOfWeek },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+      // Monthly earnings
+      Payment.aggregate([
+        {
+          $match: {
+            expert: expert._id,
+            status: "completed",
+            paidAt: { $gte: startOfMonth },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+      // Total earnings
+      Payment.aggregate([
+        {
+          $match: {
+            expert: expert._id,
+            status: "completed",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" },
+          },
+        },
+      ]),
+    ]);
+
+  // Get commission rate from admin settings
+  const adminDoc = await Admin.findOne({ role: "superadmin" }).select(
+    "commissionRate",
+  );
+  const anyAdmin = adminDoc || (await Admin.findOne().select("commissionRate"));
+  const commissionRate: number = (anyAdmin as any)?.commissionRate ?? 20;
+
+  const gross = {
+    daily: dailyEarnings[0]?.total || 0,
+    weekly: weeklyEarnings[0]?.total || 0,
+    monthly: monthlyEarnings[0]?.total || 0,
+    total: totalEarnings[0]?.total || 0,
+  };
+
+  const deduct = (amount: number) =>
+    Math.round((amount * commissionRate) / 100);
 
   res.status(200).json({
     success: true,
     data: {
-      daily: dailyEarnings[0]?.total || 0,
-      weekly: weeklyEarnings[0]?.total || 0,
-      monthly: monthlyEarnings[0]?.total || 0,
-      total: totalEarnings[0]?.total || 0
-    }
+      // Gross — what users paid
+      daily: gross.daily,
+      weekly: gross.weekly,
+      monthly: gross.monthly,
+      total: gross.total,
+
+      // Net — what expert actually receives
+      netDaily: gross.daily - deduct(gross.daily),
+      netWeekly: gross.weekly - deduct(gross.weekly),
+      netMonthly: gross.monthly - deduct(gross.monthly),
+      netTotal: gross.total - deduct(gross.total),
+
+      // Commission breakdown
+      commissionRate,
+      totalCommissionDeducted: deduct(gross.total),
+    },
   });
 });
 
@@ -640,23 +744,25 @@ export const getExpertPayouts = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   // Find expert by user ID or email
   const userId = currentUser._id.toString();
   const userEmail = currentUser.email || (currentUser as any).email;
-  
-  let expert = await Expert.findById(userId).select('_id');
+
+  let expert = await Expert.findById(userId).select("_id");
   if (!expert && userEmail) {
-    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select(
+      "_id",
+    );
   }
 
   if (!expert) {
     return res.status(404).json({
       success: false,
-      message: 'Expert profile not found'
+      message: "Expert profile not found",
     });
   }
 
@@ -667,35 +773,38 @@ export const getExpertPayouts = asyncHandler(async (req, res) => {
   // In a real system, you'd have a separate Payout model tracking actual payouts
   const completedPayments = await Payment.find({
     expert: expert._id,
-    status: 'completed'
+    status: "completed",
   })
     .sort({ paidAt: -1 })
     .limit(10)
-    .populate('user', 'firstName lastName')
-    .populate('appointment', 'sessionDate startTime')
-    .select('amount paidAt description user appointment');
+    .populate("user", "firstName lastName")
+    .populate("appointment", "sessionDate startTime")
+    .select("amount paidAt description user appointment");
 
   // Calculate total pending payout (all completed payments)
   const pendingPayout = await Payment.aggregate([
     {
       $match: {
         expert: expert._id,
-        status: 'completed'
-      }
+        status: "completed",
+      },
     },
     {
       $group: {
         _id: null,
-        total: { $sum: '$amount' }
-      }
-    }
+        total: { $sum: "$amount" },
+      },
+    },
   ]);
 
   // Calculate last payout (most recent completed payment)
-  const lastPayout = completedPayments.length > 0 ? {
-    amount: completedPayments[0].amount,
-    date: completedPayments[0].paidAt || completedPayments[0].createdAt
-  } : null;
+  const lastPayout =
+    completedPayments.length > 0
+      ? {
+          amount: completedPayments[0].amount,
+          date: completedPayments[0].paidAt || completedPayments[0].createdAt,
+        }
+      : null;
 
   // Calculate next payout date (assuming monthly payouts on the 1st of next month)
   const now = new Date();
@@ -705,21 +814,24 @@ export const getExpertPayouts = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      lastPayout: lastPayout ? {
-        amount: lastPayout.amount,
-        date: lastPayout.date.toISOString()
-      } : null,
+      lastPayout: lastPayout
+        ? {
+            amount: lastPayout.amount,
+            date: lastPayout.date.toISOString(),
+          }
+        : null,
       nextPayoutDate: nextPayoutDate.toISOString(),
       pendingPayout: pendingPayout[0]?.total || 0,
-      recentPayouts: completedPayments.slice(0, 5).map(payment => ({
+      recentPayouts: completedPayments.slice(0, 5).map((payment) => ({
         amount: payment.amount,
         date: (payment.paidAt || payment.createdAt).toISOString(),
         description: payment.description,
-        user: payment.user ? {
-          name: `${(payment.user as any).firstName} ${(payment.user as any).lastName}`
-        } : null
-      }))
-    }
+        user: payment.user
+          ? {
+              name: `${(payment.user as any).firstName} ${(payment.user as any).lastName}`,
+            }
+          : null,
+      })),
+    },
   });
 });
-
