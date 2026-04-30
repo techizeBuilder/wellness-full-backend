@@ -6,7 +6,7 @@
  * Usage: node scripts/test-forgot-password.js [email]
  */
 
-const BASE_URL = process.env.API_URL || 'https://api-adminwellness.techizebuilder.com/api';
+const BASE_URL = process.env.API_URL || 'https://apiwellness.shrawantravels.com/api';
 
 // Color helpers for terminal output
 const GREEN = '\x1b[32m';
