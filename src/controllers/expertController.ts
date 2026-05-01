@@ -132,15 +132,18 @@ const registerExpert = asyncHandler(async (req, res) => {
     });
   }
 
-  // Input validation - only require essential fields
-  if (!firstName || !email || !phone || !password || !specialization) {
+  // Determine if this is a Google registration (no password provided)
+  const isGoogleRegistration = !password;
+  const effectivePassword = password || crypto.randomBytes(32).toString('hex');
+
+  // Input validation - only require essential fields (password optional for Google)
+  if (!firstName || !email || !phone || !specialization) {
     console.log("Validation error: Missing required fields");
     const missingFields = [];
     if (!firstName) missingFields.push("Full Name (first name)");
     if (!lastName) missingFields.push("Full Name (last name)");
     if (!email) missingFields.push("email");
     if (!phone) missingFields.push("phone");
-    if (!password) missingFields.push("password");
     if (!specialization) missingFields.push("specialization");
     console.log("Missing fields:", missingFields);
     return res.status(400).json({
@@ -159,18 +162,20 @@ const registerExpert = asyncHandler(async (req, res) => {
     });
   }
 
-  // Password length validation
-  if (password.length < 6) {
-    return res.status(400).json({
-      success: false,
-      message: "Password must be at least 6 characters long",
-    });
-  }
-  if (password.length > 128) {
-    return res.status(400).json({
-      success: false,
-      message: "Password cannot exceed 128 characters",
-    });
+  // Password length validation (only for non-Google registration)
+  if (!isGoogleRegistration) {
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters long",
+      });
+    }
+    if (password.length > 128) {
+      return res.status(400).json({
+        success: false,
+        message: "Password cannot exceed 128 characters",
+      });
+    }
   }
 
   console.log("Processing expert registration for:", {
@@ -329,7 +334,7 @@ const registerExpert = asyncHandler(async (req, res) => {
       lastName: lastName || firstName,
       email,
       phone: normalizedPhone,
-      password,
+      password: effectivePassword,
       specialization,
       experience: experience ? parseInt(experience) : 0,
       bio: bio || "",
@@ -337,8 +342,8 @@ const registerExpert = asyncHandler(async (req, res) => {
       profileImage,
       certificates, // Add certificates to expert data
       userType: "expert",
-      verificationStatus: "pending", // Set to pending until email verification
-      isEmailVerified: false, // MUST verify email before accessing dashboard
+      verificationStatus: "pending", // Admin still reviews the expert
+      isEmailVerified: isGoogleRegistration, // Google users already have verified email
       isPhoneVerified: true,
       // Only add these arrays if they have valid content
       ...(parsedQualifications.length > 0 && {
@@ -381,6 +386,29 @@ const registerExpert = asyncHandler(async (req, res) => {
       }
     } else {
       console.warn("No admins found to send expert registration notification");
+    }
+
+    // For Google registrations, email is already verified - skip OTP
+    if (isGoogleRegistration) {
+      console.log("Google expert registration - skipping OTP, email already verified");
+
+      // Send welcome email
+      await sendWelcomeEmail(expert.email, expert.firstName, 'expert');
+
+      expert.password = undefined;
+      if (expert.profileImage) {
+        expert.profileImage = getFileUrl(expert.profileImage, "profiles");
+      }
+
+      return res.status(201).json({
+        success: true,
+        message:
+          "Expert registration successful. Your application is under review.",
+        data: {
+          email: expert.email,
+          requiresVerification: false,
+        },
+      });
     }
 
     // Generate and send OTP for email verification (REQUIRED - no immediate login)
