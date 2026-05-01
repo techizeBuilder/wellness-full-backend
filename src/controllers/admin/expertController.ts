@@ -8,7 +8,9 @@ import {
   checkPhoneExists,
 } from "../../utils/emailValidation";
 
-// Helper: get commission rate from primary/superadmin
+// Helper: get GLOBAL admin commission rate (the platform default).
+// Individual experts can override this via Expert.commissionRate.
+const DEFAULT_COMMISSION_RATE = 15;
 const getCommissionRate = async (): Promise<number> => {
   const admin = await Admin.findOne({ role: "superadmin" }).select(
     "commissionRate",
@@ -16,8 +18,15 @@ const getCommissionRate = async (): Promise<number> => {
   if (admin && typeof admin.commissionRate === "number")
     return admin.commissionRate;
   const anyAdmin = await Admin.findOne().select("commissionRate");
-  return anyAdmin?.commissionRate ?? 20;
+  return anyAdmin?.commissionRate ?? DEFAULT_COMMISSION_RATE;
 };
+
+// Resolve the effective rate for one expert (override → global default).
+const resolveExpertRate = (
+  expertRate: number | null | undefined,
+  globalRate: number,
+): number =>
+  typeof expertRate === "number" ? expertRate : globalRate;
 
 // Get expert statistics
 const getExpertStats = asyncHandler(async (req, res) => {
@@ -51,25 +60,40 @@ const getExpertStats = asyncHandler(async (req, res) => {
       averageRating = ratingStats[0].totalRating / ratingStats[0].totalCount;
     }
 
-    // Calculate total revenue from expert payments + commission
-    const revenueAgg = await Payment.aggregate([
+    // Per-expert revenue, then apply each expert's effective commission rate.
+    const commissionRate = await getCommissionRate();
+    const perExpertRevenue = await Payment.aggregate([
       {
         $match: {
           status: "completed",
           expert: { $exists: true, $ne: null },
         },
       },
+      { $group: { _id: "$expert", revenue: { $sum: "$amount" } } },
       {
-        $group: {
-          _id: null,
-          totalRevenue: { $sum: "$amount" },
+        $lookup: {
+          from: "experts",
+          localField: "_id",
+          foreignField: "_id",
+          as: "expertInfo",
+        },
+      },
+      { $unwind: { path: "$expertInfo", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          revenue: 1,
+          expertRate: "$expertInfo.commissionRate",
         },
       },
     ]);
 
-    const totalRevenue = revenueAgg.length > 0 ? revenueAgg[0].totalRevenue : 0;
-    const commissionRate = await getCommissionRate();
-    const totalCommission = Math.round((totalRevenue * commissionRate) / 100);
+    let totalRevenue = 0;
+    let totalCommission = 0;
+    for (const row of perExpertRevenue) {
+      const rate = resolveExpertRate(row.expertRate, commissionRate);
+      totalRevenue += row.revenue;
+      totalCommission += Math.round((row.revenue * rate) / 100);
+    }
 
     res.status(200).json({
       success: true,
@@ -509,14 +533,16 @@ const getExpertEarnings = asyncHandler(async (req, res) => {
           email: "$expertInfo.email",
           specialization: "$expertInfo.specialization",
           profileImage: "$expertInfo.profileImage",
+          expertRate: "$expertInfo.commissionRate",
         },
       },
       { $sort: { totalAmount: -1 } },
     ]);
 
-    // Add commission calculations
+    // Add commission calculations — per-expert override beats global rate.
     const experts = earningsPerExpert.map((e) => {
-      const commission = Math.round((e.totalAmount * commissionRate) / 100);
+      const effectiveRate = resolveExpertRate(e.expertRate, commissionRate);
+      const commission = Math.round((e.totalAmount * effectiveRate) / 100);
       return {
         expertId: e.expertId,
         name: e.name.trim(),
@@ -524,6 +550,7 @@ const getExpertEarnings = asyncHandler(async (req, res) => {
         specialization: e.specialization,
         profileImage: e.profileImage,
         totalAmount: e.totalAmount,
+        commissionRate: effectiveRate,
         adminCommission: commission,
         expertPayout: e.totalAmount - commission,
         sessionCount: e.sessionCount,
@@ -586,6 +613,55 @@ const updateCommissionRate = asyncHandler(async (req, res) => {
   }
 });
 
+// Update a single expert's commission rate override.
+// Pass `commissionRate: null` to clear the override and fall back to the global rate.
+const updateExpertCommissionRate = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { commissionRate } = req.body;
+
+    if (commissionRate !== null && commissionRate !== undefined) {
+      if (
+        typeof commissionRate !== "number" ||
+        commissionRate < 0 ||
+        commissionRate > 100
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "commissionRate must be a number between 0 and 100, or null to reset",
+        });
+      }
+    }
+
+    const update =
+      commissionRate === null || commissionRate === undefined
+        ? { $unset: { commissionRate: "" } }
+        : { $set: { commissionRate } };
+
+    const expert = await Expert.findByIdAndUpdate(id, update, { new: true }).select(
+      "firstName lastName email commissionRate",
+    );
+
+    if (!expert) {
+      return res.status(404).json({ success: false, message: "Expert not found" });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        commissionRate === null || commissionRate === undefined
+          ? "Expert commission override cleared (using global default)"
+          : `Expert commission rate set to ${commissionRate}%`,
+      data: { expert },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update expert commission rate",
+    });
+  }
+});
+
 export {
   getExpertStats,
   getExperts,
@@ -597,4 +673,5 @@ export {
   toggleExpertVerification,
   getExpertEarnings,
   updateCommissionRate,
+  updateExpertCommissionRate,
 };

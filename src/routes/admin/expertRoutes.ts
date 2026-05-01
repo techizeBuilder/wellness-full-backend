@@ -12,6 +12,7 @@ import {
   toggleExpertVerification,
   getExpertEarnings,
   updateCommissionRate,
+  updateExpertCommissionRate,
 } from "../../controllers/admin/expertController";
 
 import { adminProtect, hasPermission } from "../../middlewares/admin/adminAuth";
@@ -25,8 +26,11 @@ router.get("/stats", getExpertStats);
 // GET /api/admin/experts/earnings - Get per-expert earnings + admin commission
 router.get("/earnings", getExpertEarnings);
 
-// PATCH /api/admin/experts/commission-rate - Update commission rate
+// PATCH /api/admin/experts/commission-rate - Update GLOBAL commission rate
 router.patch("/commission-rate", updateCommissionRate);
+
+// PATCH /api/admin/experts/:id/commission-rate - Update one expert's override
+router.patch("/:id/commission-rate", updateExpertCommissionRate);
 
 // GET /api/admin/experts/test - Test endpoint
 router.get("/test", (req, res) => {

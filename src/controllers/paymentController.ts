@@ -603,10 +603,10 @@ export const getExpertEarnings = asyncHandler(async (req, res) => {
   const userId = currentUser._id.toString();
   const userEmail = currentUser.email || (currentUser as any).email;
 
-  let expert = await Expert.findById(userId).select("_id");
+  let expert = await Expert.findById(userId).select("_id commissionRate");
   if (!expert && userEmail) {
     expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select(
-      "_id",
+      "_id commissionRate",
     );
   }
 
@@ -696,12 +696,16 @@ export const getExpertEarnings = asyncHandler(async (req, res) => {
       ]),
     ]);
 
-  // Get commission rate from admin settings
+  // Resolve commission: per-expert override (Expert.commissionRate) wins over
+  // the global rate stored on the Admin record. Default 15 if neither is set.
   const adminDoc = await Admin.findOne({ role: "superadmin" }).select(
     "commissionRate",
   );
   const anyAdmin = adminDoc || (await Admin.findOne().select("commissionRate"));
-  const commissionRate: number = (anyAdmin as any)?.commissionRate ?? 20;
+  const globalRate: number = (anyAdmin as any)?.commissionRate ?? 15;
+  const expertOverride = (expert as any)?.commissionRate;
+  const commissionRate: number =
+    typeof expertOverride === "number" ? expertOverride : globalRate;
 
   const gross = {
     daily: dailyEarnings[0]?.total || 0,
@@ -801,9 +805,9 @@ export const getExpertPayouts = asyncHandler(async (req, res) => {
   const lastPayout =
     completedPayments.length > 0
       ? {
-          amount: completedPayments[0].amount,
-          date: completedPayments[0].paidAt || completedPayments[0].createdAt,
-        }
+        amount: completedPayments[0].amount,
+        date: completedPayments[0].paidAt || completedPayments[0].createdAt,
+      }
       : null;
 
   // Calculate next payout date (assuming monthly payouts on the 1st of next month)
@@ -816,9 +820,9 @@ export const getExpertPayouts = asyncHandler(async (req, res) => {
     data: {
       lastPayout: lastPayout
         ? {
-            amount: lastPayout.amount,
-            date: lastPayout.date.toISOString(),
-          }
+          amount: lastPayout.amount,
+          date: lastPayout.date.toISOString(),
+        }
         : null,
       nextPayoutDate: nextPayoutDate.toISOString(),
       pendingPayout: pendingPayout[0]?.total || 0,
@@ -828,8 +832,8 @@ export const getExpertPayouts = asyncHandler(async (req, res) => {
         description: payment.description,
         user: payment.user
           ? {
-              name: `${(payment.user as any).firstName} ${(payment.user as any).lastName}`,
-            }
+            name: `${(payment.user as any).firstName} ${(payment.user as any).lastName}`,
+          }
           : null,
       })),
     },

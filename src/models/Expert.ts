@@ -59,6 +59,7 @@ export interface IExpert extends Document {
   specialties?: string[];
   certificates?: ICertificate[];
   hourlyRate?: number;
+  commissionRate?: number;
   availability?: Availability;
   languages: string[];
   consultationMethods: string[];
@@ -142,7 +143,7 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
     type: String,
     default: 'expert'
   },
-  
+
   // Expert specific fields
   specialization: {
     type: String,
@@ -230,6 +231,13 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
     type: Number,
     min: [0, 'Hourly rate cannot be negative']
   },
+  // Per-expert override of the platform's admin commission percentage.
+  // If unset, the global rate from Admin.commissionRate (default 15) is used.
+  commissionRate: {
+    type: Number,
+    min: [0, 'Commission rate cannot be negative'],
+    max: [100, 'Commission rate cannot exceed 100%']
+  },
   availability: {
     monday: { start: String, end: String, available: Boolean },
     tuesday: { start: String, end: String, available: Boolean },
@@ -252,7 +260,7 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
     enum: ['one-on-one', 'one-to-many'],
     trim: true
   }],
-  
+
   // Verification and approval
   isEmailVerified: {
     type: Boolean,
@@ -278,7 +286,7 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
     type: Boolean,
     default: false
   },
-  
+
   // Ratings and reviews
   rating: {
     average: {
@@ -296,7 +304,7 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
     type: Number,
     default: 0
   },
-  
+
   // Account status
   isActive: {
     type: Boolean,
@@ -309,11 +317,11 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
   lastLogin: {
     type: Date
   },
-  
+
   // Password reset fields
   resetPasswordToken: String,
   resetPasswordExpire: Date,
-  
+
   // OTP fields
   otpCode: String,
   otpExpire: Date,
@@ -322,7 +330,7 @@ const expertSchema = new mongoose.Schema<IExpert, ExpertModel>({
     default: 0
   },
   otpLockedUntil: Date,
-  
+
   // Account security
   loginAttempts: {
     type: Number,
@@ -341,22 +349,22 @@ expertSchema.index({ verificationStatus: 1 });
 expertSchema.index({ 'rating.average': -1 });
 
 // Virtual for account lock status
-expertSchema.virtual('isLocked').get(function() {
+expertSchema.virtual('isLocked').get(function () {
   return !!(this.lockUntil && this.lockUntil.getTime() > Date.now());
 });
 
 // Virtual for OTP lock status
-expertSchema.virtual('isOTPLocked').get(function() {
+expertSchema.virtual('isOTPLocked').get(function () {
   return !!(this.otpLockedUntil && this.otpLockedUntil.getTime() > Date.now());
 });
 
 // Virtual for full name
-expertSchema.virtual('fullName').get(function() {
+expertSchema.virtual('fullName').get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
 
 // Virtual for name (to match frontend expectations)
-expertSchema.virtual('name').get(function() {
+expertSchema.virtual('name').get(function () {
   return `${this.firstName} ${this.lastName}`.trim();
 });
 
@@ -365,9 +373,9 @@ expertSchema.set('toJSON', { virtuals: true });
 expertSchema.set('toObject', { virtuals: true });
 
 // Pre-save middleware to hash password
-expertSchema.pre('save', async function(this: IExpert, next) {
+expertSchema.pre('save', async function (this: IExpert, next) {
   if (!this.isModified('password')) return next();
-  
+
   try {
     const salt = await bcrypt.genSalt(parseInt(process.env.BCRYPT_ROUNDS) || 12);
     this.password = await bcrypt.hash(this.password, salt);
@@ -378,51 +386,51 @@ expertSchema.pre('save', async function(this: IExpert, next) {
 });
 
 // Pre-save middleware to check profile completion
-expertSchema.pre('save', function(this: IExpert, next) {
+expertSchema.pre('save', function (this: IExpert, next) {
   const requiredFields = [
-    'firstName', 'lastName', 'email', 'phone', 'specialization', 
+    'firstName', 'lastName', 'email', 'phone', 'specialization',
     'experience', 'bio', 'hourlyRate'
   ];
-  
+
   const hasQualifications = this.qualifications && this.qualifications.length > 0;
   const allFieldsComplete = requiredFields.every(field => this[field]);
-  
+
   this.isProfileComplete = allFieldsComplete && hasQualifications;
   next();
 });
 
 // Instance method to check password
-expertSchema.methods.matchPassword = async function(this: IExpert, enteredPassword: string) {
+expertSchema.methods.matchPassword = async function (this: IExpert, enteredPassword: string) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
 // Instance method to increment login attempts
-expertSchema.methods.incLoginAttempts = function(this: IExpert) {
+expertSchema.methods.incLoginAttempts = function (this: IExpert) {
   if (this.lockUntil && this.lockUntil.getTime() < Date.now()) {
     return this.updateOne({
       $unset: { lockUntil: 1 },
       $set: { loginAttempts: 1 }
     });
   }
-  
+
   const updates: Record<string, unknown> = { $inc: { loginAttempts: 1 } };
-  
+
   if (this.loginAttempts + 1 >= 5 && !this.isLocked) {
     updates.$set = { lockUntil: new Date(Date.now() + 2 * 60 * 60 * 1000) };
   }
-  
+
   return this.updateOne(updates);
 };
 
 // Instance method to reset login attempts
-expertSchema.methods.resetLoginAttempts = function(this: IExpert) {
+expertSchema.methods.resetLoginAttempts = function (this: IExpert) {
   return this.updateOne({
     $unset: { loginAttempts: 1, lockUntil: 1 }
   });
 };
 
 // Instance method to generate OTP
-expertSchema.methods.generateOTP = function(this: IExpert) {
+expertSchema.methods.generateOTP = function (this: IExpert) {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   this.otpCode = otp;
   const expireMinutes = parseInt(process.env.OTP_EXPIRE_MINUTES || '10', 10);
@@ -432,58 +440,58 @@ expertSchema.methods.generateOTP = function(this: IExpert) {
 };
 
 // Instance method to verify OTP
-expertSchema.methods.verifyOTP = function(this: IExpert, enteredOTP: string) {
+expertSchema.methods.verifyOTP = function (this: IExpert, enteredOTP: string) {
   if (this.isOTPLocked) {
     return { success: false, message: 'OTP verification locked due to too many attempts' };
   }
-  
+
   if (!this.otpCode || !this.otpExpire) {
     return { success: false, message: 'No OTP found. Please request a new one.' };
   }
-  
+
   if (this.otpExpire.getTime() < Date.now()) {
     return { success: false, message: 'OTP has expired. Please request a new one.' };
   }
-  
+
   if (this.otpCode !== enteredOTP) {
     this.otpAttempts += 1;
-    
+
     if (this.otpAttempts >= 3) {
       this.otpLockedUntil = new Date(Date.now() + 30 * 60 * 1000);
     }
-    
+
     return { success: false, message: 'Invalid OTP' };
   }
-  
+
   this.otpCode = undefined;
   this.otpExpire = undefined;
   this.otpAttempts = 0;
   this.otpLockedUntil = undefined;
-  
+
   return { success: true, message: 'OTP verified successfully' };
 };
 
 // Instance method to update rating
-expertSchema.methods.updateRating = function(newRating) {
+expertSchema.methods.updateRating = function (newRating) {
   const totalRating = (this.rating.average * this.rating.count) + newRating;
   this.rating.count += 1;
   this.rating.average = totalRating / this.rating.count;
 };
 
 // Instance method to generate reset password token
-expertSchema.methods.getResetPasswordToken = function(this: IExpert) {
+expertSchema.methods.getResetPasswordToken = function (this: IExpert) {
   // Generate token
   const resetToken = crypto.randomBytes(20).toString('hex');
-  
+
   // Hash token and set to resetPasswordToken field
   this.resetPasswordToken = crypto
     .createHash('sha256')
     .update(resetToken)
     .digest('hex');
-  
+
   // Set expire time (15 minutes)
   this.resetPasswordExpire = new Date(Date.now() + 15 * 60 * 1000);
-  
+
   return resetToken;
 };
 

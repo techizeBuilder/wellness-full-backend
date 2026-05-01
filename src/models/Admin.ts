@@ -64,7 +64,7 @@ const adminSchema = new mongoose.Schema<IAdmin, AdminModel>(
     },
     commissionRate: {
       type: Number,
-      default: 20,
+      default: 15,
       min: [0, "Commission rate cannot be negative"],
       max: [100, "Commission rate cannot exceed 100%"],
     },
