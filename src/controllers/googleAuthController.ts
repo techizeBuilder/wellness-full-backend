@@ -1,17 +1,17 @@
-import crypto from 'crypto';
-import { OAuth2Client } from 'google-auth-library';
-import { asyncHandler } from '../middlewares/errorHandler';
-import { generateRefreshToken, generateToken } from '../middlewares/auth';
-import User from '../models/User';
-import Expert from '../models/Expert';
-import { getFileUrl } from '../middlewares/upload';
-import logger from '../utils/logger';
+import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
+import { asyncHandler } from "../middlewares/errorHandler";
+import { generateRefreshToken, generateToken } from "../middlewares/auth";
+import User from "../models/User";
+import Expert from "../models/Expert";
+import { getFileUrl } from "../middlewares/upload";
+import logger from "../utils/logger";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_OAUTH_CLIENT_ID);
 
 const ensureGoogleConfig = () => {
   if (!process.env.GOOGLE_OAUTH_CLIENT_ID) {
-    throw new Error('Google OAuth client ID is not configured');
+    throw new Error("Google OAuth client ID is not configured");
   }
 };
 
@@ -26,7 +26,7 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
   if (!idToken) {
     return res.status(400).json({
       success: false,
-      message: 'Google ID token is required'
+      message: "Google ID token is required",
     });
   }
 
@@ -34,13 +34,13 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
   try {
     ticket = await googleClient.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_OAUTH_CLIENT_ID
+      audience: process.env.GOOGLE_OAUTH_CLIENT_ID,
     });
   } catch (error) {
-    logger.error('Google token verification failed:', error);
+    logger.error("Google token verification failed:", error);
     return res.status(401).json({
       success: false,
-      message: 'Invalid Google credentials'
+      message: "Invalid Google credentials",
     });
   }
 
@@ -49,7 +49,7 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
   if (!payload) {
     return res.status(401).json({
       success: false,
-      message: 'Unable to verify Google account'
+      message: "Unable to verify Google account",
     });
   }
 
@@ -57,23 +57,24 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
   const email = payload.email;
   const emailVerified = payload.email_verified;
   const picture = payload.picture ?? null;
-  const givenName = payload.given_name || payload.name?.split(' ')?.[0] || 'Google';
+  const givenName =
+    payload.given_name || payload.name?.split(" ")?.[0] || "Google";
   const familyName =
     payload.family_name ||
-    (payload.name ? payload.name.split(' ').slice(1).join(' ') : '') ||
-    'User';
+    (payload.name ? payload.name.split(" ").slice(1).join(" ") : "") ||
+    "User";
 
   if (!googleId) {
     return res.status(400).json({
       success: false,
-      message: 'Google account information is incomplete'
+      message: "Google account information is incomplete",
     });
   }
 
   if (!email || emailVerified === false) {
     return res.status(400).json({
       success: false,
-      message: 'Your Google account email is not verified'
+      message: "Your Google account email is not verified",
     });
   }
 
@@ -89,22 +90,22 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
 
   if (!user) {
     // Create new user with Google auth
-    const randomPassword = crypto.randomBytes(32).toString('hex');
+    const randomPassword = crypto.randomBytes(32).toString("hex");
 
     user = new User({
       firstName: givenName,
       lastName: familyName,
       email: email.toLowerCase(),
-      phone: '', // Phone not required for Google auth
-      authProvider: 'google',
+      phone: "", // Phone not required for Google auth
+      authProvider: "google",
       googleId,
       googleAvatar: picture,
       isEmailVerified: true,
       isPhoneVerified: false,
       isActive: true,
-      userType: 'user', // Default to user, will be confirmed during onboarding
+      userType: "user", // Default to user, will be confirmed during onboarding
       accountTypeConfirmed: false, // New users need to select role
-      password: randomPassword // Required field, but won't be used
+      password: randomPassword, // Required field, but won't be used
     });
 
     await user.save({ validateBeforeSave: false });
@@ -115,8 +116,8 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
       user.googleId = googleId;
       user.googleAvatar = picture || user.googleAvatar || null;
     }
-    if (!user.authProvider || user.authProvider === 'password') {
-      user.authProvider = 'google';
+    if (!user.authProvider || user.authProvider === "password") {
+      user.authProvider = "google";
     }
     user.isEmailVerified = true;
     user.lastLogin = new Date();
@@ -132,25 +133,109 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
     return res.status(200).json({
       success: true,
       requiresAccountSelection: true,
-      message: 'Please select your account type',
+      message: "Please select your account type",
       data: {
         user: {
           id: user._id.toString(),
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
-          isEmailVerified: user.isEmailVerified
-        }
-      }
+          isEmailVerified: user.isEmailVerified,
+        },
+      },
     });
   }
 
-  // Check if onboarding is incomplete for Google users
-  // For Google users, phone is required (should not be empty or dummy value)
-  const isGoogleUser = user.authProvider === 'google';
-  const hasValidPhone = user.phone && 
-    user.phone.trim() !== '' && 
-    user.phone !== '0000000000' && 
+  // For experts, check if Expert record exists with specialization
+  if (user.userType === "expert") {
+    const expert = await Expert.findOne({ email: user.email });
+    if (
+      !expert ||
+      !expert.specialization ||
+      expert.specialization.trim() === ""
+    ) {
+      // Incomplete expert onboarding - missing specialization (account type already confirmed)
+      const userResponse = user.toObject();
+      delete (userResponse as any).password;
+
+      return res.status(200).json({
+        success: true,
+        requiresAccountSelection: true,
+        message: "Please complete your expert profile",
+        data: {
+          user: {
+            id: user._id.toString(),
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            isEmailVerified: user.isEmailVerified,
+            userType: user.userType, // Include userType so frontend knows which form to show
+          },
+        },
+      });
+    }
+
+    // Expert record exists with specialization - sync phone to User model if missing
+    if ((!user.phone || user.phone.trim() === "") && expert.phone) {
+      user.phone = expert.phone;
+      await user.save({ validateBeforeSave: false });
+      logger.info(`Synced phone from Expert to User model for: ${user.email}`);
+    }
+
+    // Expert profile complete - skip phone check and go directly to login
+    user.lastLogin = new Date();
+    await user.save({ validateBeforeSave: false });
+
+    const token = generateToken(user._id.toString(), user.userType || "user");
+    const refreshToken = generateRefreshToken(
+      user._id.toString(),
+      user.userType || "user",
+    );
+
+    const userResponse = user.toObject();
+    delete (userResponse as any).password;
+
+    if (userResponse.profileImage) {
+      userResponse.profileImage = getFileUrl(
+        userResponse.profileImage,
+        "profiles",
+      );
+    }
+
+    logger.info(
+      `Google expert login successful (direct dashboard): ${user.email}`,
+    );
+
+    return res.status(200).json({
+      success: true,
+      requiresAccountSelection: false,
+      message: "Expert login successful",
+      data: {
+        user: {
+          id: user._id.toString(),
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone,
+          userType: user.userType,
+          isEmailVerified: user.isEmailVerified,
+          profileImage: userResponse.profileImage ?? null,
+          googleAvatar: user.googleAvatar ?? null,
+        },
+        userType: user.userType || "expert",
+        accountType: "Expert",
+        token,
+        refreshToken,
+      },
+    });
+  }
+
+  // Existing user (non-expert) with confirmed account type - check phone for Google users
+  const isGoogleUser = user.authProvider === "google";
+  const hasValidPhone =
+    user.phone &&
+    user.phone.trim() !== "" &&
+    user.phone !== "0000000000" &&
     /^[+]?[\d\s\-\(\)]{10,}$/.test(user.phone);
 
   if (isGoogleUser && !hasValidPhone) {
@@ -161,7 +246,7 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
     return res.status(200).json({
       success: true,
       requiresAccountSelection: true,
-      message: 'Please complete your profile',
+      message: "Please complete your profile",
       data: {
         user: {
           id: user._id.toString(),
@@ -169,58 +254,38 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
           firstName: user.firstName,
           lastName: user.lastName,
           isEmailVerified: user.isEmailVerified,
-          userType: user.userType // Include userType so frontend knows which form to show
-        }
-      }
+          userType: user.userType, // Include userType so frontend knows which form to show
+        },
+      },
     });
-  }
-
-  // For experts, check if Expert record exists with specialization
-  if (user.userType === 'expert') {
-    const expert = await Expert.findOne({ email: user.email });
-    if (!expert || !expert.specialization || expert.specialization.trim() === '') {
-      // Incomplete expert onboarding - missing specialization (account type already confirmed)
-      const userResponse = user.toObject();
-      delete (userResponse as any).password;
-
-      return res.status(200).json({
-        success: true,
-        requiresAccountSelection: true,
-        message: 'Please complete your expert profile',
-        data: {
-          user: {
-            id: user._id.toString(),
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            isEmailVerified: user.isEmailVerified,
-            userType: user.userType // Include userType so frontend knows which form to show
-          }
-        }
-      });
-    }
   }
 
   // Existing user with confirmed account type and complete onboarding - proceed with login
   user.lastLogin = new Date();
   await user.save({ validateBeforeSave: false });
 
-  const token = generateToken(user._id.toString(), user.userType || 'user');
-  const refreshToken = generateRefreshToken(user._id.toString(), user.userType || 'user');
+  const token = generateToken(user._id.toString(), user.userType || "user");
+  const refreshToken = generateRefreshToken(
+    user._id.toString(),
+    user.userType || "user",
+  );
 
   const userResponse = user.toObject();
   delete (userResponse as any).password;
 
   if (userResponse.profileImage) {
-    userResponse.profileImage = getFileUrl(userResponse.profileImage, 'profiles');
+    userResponse.profileImage = getFileUrl(
+      userResponse.profileImage,
+      "profiles",
+    );
   }
 
-  const accountType = user.userType === 'expert' ? 'Expert' : 'User';
+  const accountType = user.userType === "expert" ? "Expert" : "User";
 
   return res.status(200).json({
     success: true,
     requiresAccountSelection: false,
-    message: 'User login successful',
+    message: "User login successful",
     data: {
       user: {
         id: user._id.toString(),
@@ -231,13 +296,13 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
         userType: user.userType,
         isEmailVerified: user.isEmailVerified,
         profileImage: userResponse.profileImage ?? null,
-        googleAvatar: user.googleAvatar ?? null
+        googleAvatar: user.googleAvatar ?? null,
       },
-      userType: user.userType || 'user',
+      userType: user.userType || "user",
       accountType,
       token,
-      refreshToken
-    }
+      refreshToken,
+    },
   });
 });
 
@@ -247,20 +312,20 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
 const completeGoogleOnboarding = asyncHandler(async (req, res) => {
   const { googleUserId, accountType } = req.body as {
     googleUserId?: string;
-    accountType?: 'Expert' | 'User';
+    accountType?: "Expert" | "User";
   };
 
   if (!googleUserId) {
     return res.status(400).json({
       success: false,
-      message: 'User ID is required'
+      message: "User ID is required",
     });
   }
 
-  if (!accountType || !['Expert', 'User'].includes(accountType)) {
+  if (!accountType || !["Expert", "User"].includes(accountType)) {
     return res.status(400).json({
       success: false,
-      message: 'Account type must be either "Expert" or "User"'
+      message: 'Account type must be either "Expert" or "User"',
     });
   }
 
@@ -269,19 +334,19 @@ const completeGoogleOnboarding = asyncHandler(async (req, res) => {
   if (!user) {
     return res.status(404).json({
       success: false,
-      message: 'User not found'
+      message: "User not found",
     });
   }
 
-  if (user.authProvider !== 'google') {
+  if (user.authProvider !== "google") {
     return res.status(400).json({
       success: false,
-      message: 'This endpoint is only for Google authentication users'
+      message: "This endpoint is only for Google authentication users",
     });
   }
 
   // Update user type
-  user.userType = accountType === 'Expert' ? 'expert' : 'user';
+  user.userType = accountType === "Expert" ? "expert" : "user";
   user.accountTypeConfirmed = true;
   user.lastLogin = new Date();
 
@@ -289,7 +354,9 @@ const completeGoogleOnboarding = asyncHandler(async (req, res) => {
   // For now, we'll just update the User model
   await user.save({ validateBeforeSave: false });
 
-  logger.info(`Google onboarding completed for ${user.email} as ${accountType}`);
+  logger.info(
+    `Google onboarding completed for ${user.email} as ${accountType}`,
+  );
 
   const token = generateToken(user._id.toString(), user.userType);
   const refreshToken = generateRefreshToken(user._id.toString(), user.userType);
@@ -298,12 +365,15 @@ const completeGoogleOnboarding = asyncHandler(async (req, res) => {
   delete (userResponse as any).password;
 
   if (userResponse.profileImage) {
-    userResponse.profileImage = getFileUrl(userResponse.profileImage, 'profiles');
+    userResponse.profileImage = getFileUrl(
+      userResponse.profileImage,
+      "profiles",
+    );
   }
 
   return res.status(200).json({
     success: true,
-    message: 'Onboarding completed successfully',
+    message: "Onboarding completed successfully",
     data: {
       user: {
         id: user._id.toString(),
@@ -314,13 +384,13 @@ const completeGoogleOnboarding = asyncHandler(async (req, res) => {
         userType: user.userType,
         isEmailVerified: user.isEmailVerified,
         profileImage: userResponse.profileImage ?? null,
-        googleAvatar: user.googleAvatar ?? null
+        googleAvatar: user.googleAvatar ?? null,
       },
       userType: user.userType,
       accountType,
       token,
-      refreshToken
-    }
+      refreshToken,
+    },
   });
 });
 
@@ -338,23 +408,23 @@ const updateGoogleUserProfile = asyncHandler(async (req, res) => {
   if (!userId) {
     return res.status(400).json({
       success: false,
-      message: 'User ID is required'
+      message: "User ID is required",
     });
   }
 
   if (!phone) {
     return res.status(400).json({
       success: false,
-      message: 'Phone number is required'
+      message: "Phone number is required",
     });
   }
 
   // Phone validation
   const phoneRegex = /^\d{10}$/;
-  if (!phoneRegex.test(phone.replace(/\D/g, ''))) {
+  if (!phoneRegex.test(phone.replace(/\D/g, ""))) {
     return res.status(400).json({
       success: false,
-      message: 'Phone number must be exactly 10 digits'
+      message: "Phone number must be exactly 10 digits",
     });
   }
 
@@ -363,21 +433,21 @@ const updateGoogleUserProfile = asyncHandler(async (req, res) => {
   if (!user) {
     return res.status(404).json({
       success: false,
-      message: 'User not found'
+      message: "User not found",
     });
   }
 
-  if (user.authProvider !== 'google') {
+  if (user.authProvider !== "google") {
     return res.status(400).json({
       success: false,
-      message: 'This endpoint is only for Google authentication users'
+      message: "This endpoint is only for Google authentication users",
     });
   }
 
   // Update fields
   if (firstName) user.firstName = firstName.trim();
   if (lastName) user.lastName = lastName.trim();
-  user.phone = phone.replace(/\D/g, '');
+  user.phone = phone.replace(/\D/g, "");
   user.isPhoneVerified = false; // Phone needs verification
 
   await user.save({ validateBeforeSave: false });
@@ -388,12 +458,15 @@ const updateGoogleUserProfile = asyncHandler(async (req, res) => {
   delete (userResponse as any).password;
 
   if (userResponse.profileImage) {
-    userResponse.profileImage = getFileUrl(userResponse.profileImage, 'profiles');
+    userResponse.profileImage = getFileUrl(
+      userResponse.profileImage,
+      "profiles",
+    );
   }
 
   return res.status(200).json({
     success: true,
-    message: 'Profile updated successfully',
+    message: "Profile updated successfully",
     data: {
       user: {
         id: user._id.toString(),
@@ -404,10 +477,10 @@ const updateGoogleUserProfile = asyncHandler(async (req, res) => {
         userType: user.userType,
         isEmailVerified: user.isEmailVerified,
         profileImage: userResponse.profileImage ?? null,
-        googleAvatar: user.googleAvatar ?? null
+        googleAvatar: user.googleAvatar ?? null,
       },
-      accountType: user.userType === 'expert' ? 'Expert' : 'User'
-    }
+      accountType: user.userType === "expert" ? "Expert" : "User",
+    },
   });
 });
 
@@ -415,7 +488,16 @@ const updateGoogleUserProfile = asyncHandler(async (req, res) => {
 // @route   POST /api/auth/google/update-expert-profile
 // @access  Public (but requires valid user ID from onboarding)
 const updateGoogleExpertProfile = asyncHandler(async (req, res) => {
-  const { userId, firstName, lastName, phone, specialization, experience, bio, hourlyRate } = req.body as {
+  const {
+    userId,
+    firstName,
+    lastName,
+    phone,
+    specialization,
+    experience,
+    bio,
+    hourlyRate,
+  } = req.body as {
     userId?: string;
     firstName?: string;
     lastName?: string;
@@ -429,30 +511,30 @@ const updateGoogleExpertProfile = asyncHandler(async (req, res) => {
   if (!userId) {
     return res.status(400).json({
       success: false,
-      message: 'User ID is required'
+      message: "User ID is required",
     });
   }
 
   if (!phone) {
     return res.status(400).json({
       success: false,
-      message: 'Phone number is required'
+      message: "Phone number is required",
     });
   }
 
   if (!specialization) {
     return res.status(400).json({
       success: false,
-      message: 'Specialization is required'
+      message: "Specialization is required",
     });
   }
 
   // Phone validation
   const phoneRegex = /^\d{10}$/;
-  if (!phoneRegex.test(phone.replace(/\D/g, ''))) {
+  if (!phoneRegex.test(phone.replace(/\D/g, ""))) {
     return res.status(400).json({
       success: false,
-      message: 'Phone number must be exactly 10 digits'
+      message: "Phone number must be exactly 10 digits",
     });
   }
 
@@ -461,21 +543,21 @@ const updateGoogleExpertProfile = asyncHandler(async (req, res) => {
   if (!user) {
     return res.status(404).json({
       success: false,
-      message: 'User not found'
+      message: "User not found",
     });
   }
 
-  if (user.authProvider !== 'google' || user.userType !== 'expert') {
+  if (user.authProvider !== "google" || user.userType !== "expert") {
     return res.status(400).json({
       success: false,
-      message: 'This endpoint is only for Google expert users'
+      message: "This endpoint is only for Google expert users",
     });
   }
 
   // Update basic fields
   if (firstName) user.firstName = firstName.trim();
   if (lastName) user.lastName = lastName.trim();
-  user.phone = phone.replace(/\D/g, '');
+  user.phone = phone.replace(/\D/g, "");
   user.isPhoneVerified = false;
 
   await user.save({ validateBeforeSave: false });
@@ -490,22 +572,22 @@ const updateGoogleExpertProfile = asyncHandler(async (req, res) => {
       lastName: user.lastName,
       email: user.email,
       phone: user.phone,
-      password: user.password || crypto.randomBytes(32).toString('hex'), // Use existing or generate
+      password: user.password || crypto.randomBytes(32).toString("hex"), // Use existing or generate
       specialization: specialization.trim(),
       experience: experience || 0,
-      bio: bio?.trim() || '',
+      bio: bio?.trim() || "",
       hourlyRate: hourlyRate || 0,
-      userType: 'expert',
+      userType: "expert",
       isEmailVerified: true,
       isPhoneVerified: false,
       isActive: true,
-      verificationStatus: 'pending'
+      verificationStatus: "pending",
     });
   } else {
     // Update existing Expert record
     if (firstName) expert.firstName = firstName.trim();
     if (lastName) expert.lastName = lastName.trim();
-    expert.phone = phone.replace(/\D/g, '');
+    expert.phone = phone.replace(/\D/g, "");
     expert.specialization = specialization.trim();
     if (experience !== undefined) expert.experience = experience;
     if (bio !== undefined) expert.bio = bio.trim();
@@ -520,12 +602,15 @@ const updateGoogleExpertProfile = asyncHandler(async (req, res) => {
   delete (userResponse as any).password;
 
   if (userResponse.profileImage) {
-    userResponse.profileImage = getFileUrl(userResponse.profileImage, 'profiles');
+    userResponse.profileImage = getFileUrl(
+      userResponse.profileImage,
+      "profiles",
+    );
   }
 
   return res.status(200).json({
     success: true,
-    message: 'Expert profile updated successfully',
+    message: "Expert profile updated successfully",
     data: {
       user: {
         id: user._id.toString(),
@@ -536,12 +621,16 @@ const updateGoogleExpertProfile = asyncHandler(async (req, res) => {
         userType: user.userType,
         isEmailVerified: user.isEmailVerified,
         profileImage: userResponse.profileImage ?? null,
-        googleAvatar: user.googleAvatar ?? null
+        googleAvatar: user.googleAvatar ?? null,
       },
-      accountType: 'Expert'
-    }
+      accountType: "Expert",
+    },
   });
 });
 
-export { googleMobileLogin, completeGoogleOnboarding, updateGoogleUserProfile, updateGoogleExpertProfile };
-
+export {
+  googleMobileLogin,
+  completeGoogleOnboarding,
+  updateGoogleUserProfile,
+  updateGoogleExpertProfile,
+};
