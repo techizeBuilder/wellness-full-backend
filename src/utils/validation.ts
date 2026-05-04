@@ -67,7 +67,7 @@ export const expertRegisterSchema = Joi.object({
     'string.empty': 'Phone Number is required.',
     'any.invalid': 'Phone Number cannot have all digits the same.'
   }),
-  password: Joi.string().min(6).max(128).required().messages({
+  password: Joi.string().min(6).max(128).optional().allow('').messages({
     'string.min': 'Password must be at least 6 characters long.',
     'string.max': 'Password cannot exceed 128 characters.',
     'string.empty': 'Password is required.'
