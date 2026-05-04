@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import mongoose, { SortOrder } from "mongoose";
 import Expert, { IExpert } from "../models/Expert";
+import User from "../models/User";
 import Appointment from "../models/Appointment";
 import BankAccount from "../models/BankAccount";
 import UserSubscription from "../models/UserSubscription";
@@ -134,7 +135,7 @@ const registerExpert = asyncHandler(async (req, res) => {
 
   // Determine if this is a Google registration (no password provided)
   const isGoogleRegistration = !password;
-  const effectivePassword = password || crypto.randomBytes(32).toString('hex');
+  const effectivePassword = password || crypto.randomBytes(32).toString("hex");
 
   // Input validation - only require essential fields (password optional for Google)
   if (!firstName || !email || !phone || !specialization) {
@@ -190,20 +191,77 @@ const registerExpert = asyncHandler(async (req, res) => {
   const emailCheck = await checkEmailExists(email);
   if (emailCheck.exists) {
     console.log("Email already exists:", emailCheck.collection);
-    return res.status(400).json({
-      success: false,
-      message: emailCheck.message,
-    });
+
+    // For Google registration: if email exists in User collection as a Google expert,
+    // allow them to proceed (they are completing expert profile setup)
+    if (isGoogleRegistration && emailCheck.collection === "user") {
+      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      if (
+        existingUser &&
+        existingUser.authProvider === "google" &&
+        existingUser.userType === "expert"
+      ) {
+        console.log(
+          "Google expert user found in User collection - allowing expert registration",
+        );
+        // Fall through - allowed
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: emailCheck.message,
+        });
+      }
+    } else if (emailCheck.collection === "expert") {
+      // Expert record already exists - check if this is a Google re-submission
+      if (isGoogleRegistration) {
+        console.log(
+          "Expert record already exists for Google user - this is a re-registration attempt",
+        );
+        return res.status(400).json({
+          success: false,
+          message:
+            "Expert profile already submitted. Your application is under review.",
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        message: emailCheck.message,
+      });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: emailCheck.message,
+      });
+    }
   }
 
   // Check if phone already exists in either User or Expert collection
   const phoneCheck = await checkPhoneExists(normalizedPhone);
   if (phoneCheck.exists) {
     console.log("Phone already exists:", phoneCheck.collection);
-    return res.status(400).json({
-      success: false,
-      message: phoneCheck.message,
-    });
+
+    // For Google registration: phone might already be on the User record (same user)
+    if (isGoogleRegistration && phoneCheck.collection === "user") {
+      const existingUser = await User.findOne({ phone: normalizedPhone });
+      if (
+        existingUser &&
+        existingUser.authProvider === "google" &&
+        existingUser.email === email.toLowerCase()
+      ) {
+        console.log("Phone belongs to same Google user - allowing");
+        // Fall through - allowed
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: phoneCheck.message,
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: phoneCheck.message,
+      });
+    }
   }
 
   try {
@@ -390,10 +448,12 @@ const registerExpert = asyncHandler(async (req, res) => {
 
     // For Google registrations, email is already verified - skip OTP
     if (isGoogleRegistration) {
-      console.log("Google expert registration - skipping OTP, email already verified");
+      console.log(
+        "Google expert registration - skipping OTP, email already verified",
+      );
 
       // Send welcome email
-      await sendWelcomeEmail(expert.email, expert.firstName, 'expert');
+      await sendWelcomeEmail(expert.email, expert.firstName, "expert");
 
       expert.password = undefined;
       if (expert.profileImage) {
