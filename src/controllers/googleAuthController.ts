@@ -280,7 +280,8 @@ const googleMobileLogin = asyncHandler(async (req, res) => {
     );
   }
 
-  const accountType = (user.userType as string) === 'expert' ? 'Expert' : 'User';
+  const accountType =
+    (user.userType as string) === "expert" ? "Expert" : "User";
 
   return res.status(200).json({
     success: true,

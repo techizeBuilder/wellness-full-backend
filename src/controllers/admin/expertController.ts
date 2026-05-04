@@ -25,8 +25,7 @@ const getCommissionRate = async (): Promise<number> => {
 const resolveExpertRate = (
   expertRate: number | null | undefined,
   globalRate: number,
-): number =>
-  typeof expertRate === "number" ? expertRate : globalRate;
+): number => (typeof expertRate === "number" ? expertRate : globalRate);
 
 // Get expert statistics
 const getExpertStats = asyncHandler(async (req, res) => {
@@ -628,7 +627,8 @@ const updateExpertCommissionRate = asyncHandler(async (req, res) => {
       ) {
         return res.status(400).json({
           success: false,
-          message: "commissionRate must be a number between 0 and 100, or null to reset",
+          message:
+            "commissionRate must be a number between 0 and 100, or null to reset",
         });
       }
     }
@@ -638,12 +638,14 @@ const updateExpertCommissionRate = asyncHandler(async (req, res) => {
         ? { $unset: { commissionRate: "" } }
         : { $set: { commissionRate } };
 
-    const expert = await Expert.findByIdAndUpdate(id, update, { new: true }).select(
-      "firstName lastName email commissionRate",
-    );
+    const expert = await Expert.findByIdAndUpdate(id, update, {
+      new: true,
+    }).select("firstName lastName email commissionRate");
 
     if (!expert) {
-      return res.status(404).json({ success: false, message: "Expert not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Expert not found" });
     }
 
     return res.status(200).json({
@@ -662,6 +664,134 @@ const updateExpertCommissionRate = asyncHandler(async (req, res) => {
   }
 });
 
+// Get all expert bank accounts with earnings summary (admin view)
+const getExpertBankAccounts = asyncHandler(async (req, res) => {
+  try {
+    const { search, page = 1, limit = 20 } = req.query;
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = parseInt(limit as string, 10);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get global commission rate
+    const commissionRate = await getCommissionRate();
+
+    // Build expert query for search
+    const expertQuery: any = {};
+    if (search) {
+      expertQuery.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { specialization: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const totalExperts = await Expert.countDocuments(expertQuery);
+    const experts = await Expert.find(expertQuery)
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitNum);
+
+    const expertIds = experts.map((e) => e._id);
+
+    // Fetch bank accounts for these experts
+    const bankAccounts = await BankAccount.find({ expert: { $in: expertIds } });
+    const bankMap: Record<string, any> = {};
+    bankAccounts.forEach((b) => {
+      bankMap[b.expert.toString()] = b;
+    });
+
+    // Fetch earnings per expert from completed payments
+    const earningsRaw = await Payment.aggregate([
+      { $match: { status: "completed", expert: { $in: expertIds } } },
+      {
+        $group: {
+          _id: "$expert",
+          totalAmount: { $sum: "$amount" },
+          sessionCount: { $sum: 1 },
+        },
+      },
+    ]);
+    const earningsMap: Record<
+      string,
+      { totalAmount: number; sessionCount: number }
+    > = {};
+    earningsRaw.forEach((e) => {
+      earningsMap[e._id.toString()] = e;
+    });
+
+    const result = experts.map((expert) => {
+      const id = expert._id.toString();
+      const bankAccount = bankMap[id] || null;
+      const earnings = earningsMap[id] || { totalAmount: 0, sessionCount: 0 };
+      const effectiveRate = resolveExpertRate(
+        (expert as any).commissionRate,
+        commissionRate,
+      );
+      const adminCommission = Math.round(
+        (earnings.totalAmount * effectiveRate) / 100,
+      );
+      const expertPayout = earnings.totalAmount - adminCommission;
+
+      return {
+        id,
+        firstName: expert.firstName,
+        lastName: expert.lastName,
+        email: expert.email,
+        phone: expert.phone,
+        specialization: expert.specialization,
+        isActive: expert.isActive,
+        verificationStatus: expert.verificationStatus,
+        bankAccount: bankAccount
+          ? {
+              accountHolderName: bankAccount.accountHolderName,
+              accountNumber: bankAccount.accountNumber,
+              bankName: bankAccount.bankName,
+              ifscCode: bankAccount.ifscCode,
+              branchName: bankAccount.branchName || "",
+              accountType: bankAccount.accountType,
+              isActive: bankAccount.isActive,
+            }
+          : null,
+        earnings: {
+          totalAmount: earnings.totalAmount,
+          sessionCount: earnings.sessionCount,
+          commissionRate: effectiveRate,
+          adminCommission,
+          expertPayout,
+        },
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        experts: result,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: totalExperts,
+          pages: Math.ceil(totalExperts / limitNum),
+        },
+        summary: {
+          totalExperts,
+          expertsWithBank: bankAccounts.length,
+          expertsWithoutBank: totalExperts - bankAccounts.length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching expert bank accounts:", error);
+    res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to fetch expert bank accounts",
+      });
+  }
+});
+
 export {
   getExpertStats,
   getExperts,
@@ -674,4 +804,5 @@ export {
   getExpertEarnings,
   updateCommissionRate,
   updateExpertCommissionRate,
+  getExpertBankAccounts,
 };

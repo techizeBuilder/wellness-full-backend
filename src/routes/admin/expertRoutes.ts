@@ -13,6 +13,7 @@ import {
   getExpertEarnings,
   updateCommissionRate,
   updateExpertCommissionRate,
+  getExpertBankAccounts,
 } from "../../controllers/admin/expertController";
 
 import { adminProtect, hasPermission } from "../../middlewares/admin/adminAuth";
@@ -25,6 +26,9 @@ router.get("/stats", getExpertStats);
 
 // GET /api/admin/experts/earnings - Get per-expert earnings + admin commission
 router.get("/earnings", getExpertEarnings);
+
+// GET /api/admin/experts/bank-accounts - Get all experts with bank account & earnings
+router.get("/bank-accounts", getExpertBankAccounts);
 
 // PATCH /api/admin/experts/commission-rate - Update GLOBAL commission rate
 router.patch("/commission-rate", updateCommissionRate);

@@ -419,6 +419,17 @@ const registerExpert = asyncHandler(async (req, res) => {
 
     console.log("Expert created successfully:", expert._id);
 
+    // For Google registrations: update the User model's phone so verifyOnboardingComplete
+    // doesn't keep sending them back to registration (it checks User.phone)
+    if (isGoogleRegistration) {
+      await User.findOneAndUpdate(
+        { email: email.toLowerCase() },
+        { phone: normalizedPhone },
+        { new: true },
+      );
+      console.log("Updated User phone for Google expert:", normalizedPhone);
+    }
+
     // Create notification for all admins about new expert registration
     const admins = await Admin.find();
     if (admins.length > 0) {
