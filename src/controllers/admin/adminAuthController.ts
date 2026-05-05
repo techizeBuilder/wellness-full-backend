@@ -49,7 +49,7 @@ const adminLogin = asyncHandler(async (req, res) => {
   const token = jwt.sign(
     { id: admin._id.toString(), role: admin.role },
     secret,
-    { expiresIn: process.env.JWT_ADMIN_EXPIRE || "8h" }
+    { expiresIn: process.env.JWT_ADMIN_EXPIRE || "8h" },
   );
 
   res.status(200).json({
@@ -152,7 +152,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
       <div style="background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
         <div style="text-align: center; margin-bottom: 30px;">
           <h1 style="color: #2c5e6b; margin: 0;">Password Reset Request</h1>
-          <p style="color: #666; font-size: 16px;">Wellness App Admin Panel</p>
+          <p style="color: #666; font-size: 16px;">VedaNova Admin Panel</p>
         </div>
         
         <p style="font-size: 16px; color: #333;">Hello <strong>${admin.name}</strong>,</p>
@@ -194,13 +194,13 @@ const forgotPassword = asyncHandler(async (req, res) => {
 
     const emailResult = await sendEmail({
       email: admin.email,
-      subject: "Password Reset Request - Wellness App Admin",
+      subject: "Password Reset Request - VedaNova Admin",
       html,
     });
 
     if (emailResult.success) {
       console.log(
-        `✅ Password reset email sent successfully to ${admin.email}`
+        `✅ Password reset email sent successfully to ${admin.email}`,
       );
       console.log(`📨 Message ID: ${emailResult.messageId}`);
       console.log(`⏱️ Email sent in: ${emailResult.duration}ms`);
@@ -217,7 +217,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
       });
     } else {
       console.error(
-        `❌ Failed to send password reset email to ${admin.email}:`
+        `❌ Failed to send password reset email to ${admin.email}:`,
       );
       console.error(`📧 Error: ${emailResult.error}`);
       console.error(`⏱️ Failed after: ${emailResult.duration}ms`);
@@ -238,7 +238,7 @@ const forgotPassword = asyncHandler(async (req, res) => {
   } catch (err) {
     console.error(
       "❌ Unexpected error sending password reset email:",
-      err.message
+      err.message,
     );
     admin.resetPasswordToken = undefined;
     admin.resetPasswordExpiry = undefined;

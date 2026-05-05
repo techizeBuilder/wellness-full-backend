@@ -1,16 +1,19 @@
-import { RtcRole, RtcTokenBuilder } from 'agora-access-token';
-import mongoose from 'mongoose';
-import ENV from '../config/environment';
-import { asyncHandler } from '../middlewares/errorHandler';
-import Appointment, { IAppointment } from '../models/Appointment';
-import Expert from '../models/Expert';
-import ExpertAvailability from '../models/ExpertAvailability';
-import User from '../models/User';
-import Plan from '../models/Plan';
-import { deleteFile, getFilePath, getFileUrl } from '../middlewares/upload';
-import logger from '../utils/logger';
-import { sendBookingConfirmationEmail, sendBookingStatusUpdateEmail } from '../services/emailService';
-import pushNotificationService from '../services/pushNotificationService';
+import { RtcRole, RtcTokenBuilder } from "agora-access-token";
+import mongoose from "mongoose";
+import ENV from "../config/environment";
+import { asyncHandler } from "../middlewares/errorHandler";
+import Appointment, { IAppointment } from "../models/Appointment";
+import Expert from "../models/Expert";
+import ExpertAvailability from "../models/ExpertAvailability";
+import User from "../models/User";
+import Plan from "../models/Plan";
+import { deleteFile, getFilePath, getFileUrl } from "../middlewares/upload";
+import logger from "../utils/logger";
+import {
+  sendBookingConfirmationEmail,
+  sendBookingStatusUpdateEmail,
+} from "../services/emailService";
+import pushNotificationService from "../services/pushNotificationService";
 
 type ParticipantDetails = {
   firstName?: string;
@@ -24,16 +27,15 @@ type PopulatedAppointment = IAppointment & {
 };
 
 const getSessionDateTimes = async (appointment: IAppointment) => {
-  
   const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-  
+
   // For dynamic group sessions, fetch date/time from plan
   if ((appointment as any).isDynamicGroupSession && appointment.planId) {
-    const Plan = (await import('../models/Plan')).default;
+    const Plan = (await import("../models/Plan")).default;
     const plan = await Plan.findById(appointment.planId);
     if (plan && plan.scheduledDate && plan.scheduledTime) {
       const sessionDate = new Date(plan.scheduledDate);
-      const [startHour, startMin] = plan.scheduledTime.split(':').map(Number);
+      const [startHour, startMin] = plan.scheduledTime.split(":").map(Number);
       const duration = plan.duration || appointment.duration || 60;
       const endTotalMinutes = startHour * 60 + startMin + duration;
       const endHour = Math.floor(endTotalMinutes / 60);
@@ -43,14 +45,20 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
       const year = sessionDate.getUTCFullYear();
       const month = sessionDate.getUTCMonth();
       const day = sessionDate.getUTCDate();
-      
+
       // Create date assuming times are in IST, then convert to UTC for comparison
       // Create in UTC first, then subtract IST offset to get the correct UTC time
-      const startDateTimeIST = new Date(Date.UTC(year, month, day, startHour, startMin, 0, 0));
-      const endDateTimeIST = new Date(Date.UTC(year, month, day, endHour, endMin, 0, 0));
-      
+      const startDateTimeIST = new Date(
+        Date.UTC(year, month, day, startHour, startMin, 0, 0),
+      );
+      const endDateTimeIST = new Date(
+        Date.UTC(year, month, day, endHour, endMin, 0, 0),
+      );
+
       // Convert IST to UTC by subtracting the offset
-      const startDateTime = new Date(startDateTimeIST.getTime() - IST_OFFSET_MS);
+      const startDateTime = new Date(
+        startDateTimeIST.getTime() - IST_OFFSET_MS,
+      );
       const endDateTime = new Date(endDateTimeIST.getTime() - IST_OFFSET_MS);
 
       return { startDateTime, endDateTime };
@@ -59,18 +67,22 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
 
   // For regular appointments, use stored date/time
   const sessionDate = new Date(appointment.sessionDate);
-  const [startHour, startMin] = appointment.startTime.split(':').map(Number);
-  const [endHour, endMin] = appointment.endTime.split(':').map(Number);
+  const [startHour, startMin] = appointment.startTime.split(":").map(Number);
+  const [endHour, endMin] = appointment.endTime.split(":").map(Number);
 
   // Extract date components (interpret in IST)
   const year = sessionDate.getUTCFullYear();
   const month = sessionDate.getUTCMonth();
   const day = sessionDate.getUTCDate();
-  
+
   // Create date assuming times are in IST, then convert to UTC for comparison
-  const startDateTimeIST = new Date(Date.UTC(year, month, day, startHour, startMin, 0, 0));
-  const endDateTimeIST = new Date(Date.UTC(year, month, day, endHour, endMin, 0, 0));
-  
+  const startDateTimeIST = new Date(
+    Date.UTC(year, month, day, startHour, startMin, 0, 0),
+  );
+  const endDateTimeIST = new Date(
+    Date.UTC(year, month, day, endHour, endMin, 0, 0),
+  );
+
   // Convert IST to UTC by subtracting the offset
   const startDateTime = new Date(startDateTimeIST.getTime() - IST_OFFSET_MS);
   const endDateTime = new Date(endDateTimeIST.getTime() - IST_OFFSET_MS);
@@ -78,7 +90,10 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
   return { startDateTime, endDateTime };
 };
 
-const buildDisplayName = (doc?: ParticipantDetails, fallback: string = 'Wellness Member') => {
+const buildDisplayName = (
+  doc?: ParticipantDetails,
+  fallback: string = "Wellness Member",
+) => {
   if (!doc) {
     return fallback;
   }
@@ -88,22 +103,29 @@ const buildDisplayName = (doc?: ParticipantDetails, fallback: string = 'Wellness
     return fallback;
   }
 
-  return parts.join(' ');
+  return parts.join(" ");
 };
 
-export const notifyParticipantsOfBooking = async (appointment: PopulatedAppointment) => {
+export const notifyParticipantsOfBooking = async (
+  appointment: PopulatedAppointment,
+) => {
   try {
     const { startDateTime } = await getSessionDateTimes(appointment);
-    const tasks: Array<{ label: 'user' | 'expert'; promise: Promise<unknown> }> = [];
+    const tasks: Array<{
+      label: "user" | "expert";
+      promise: Promise<unknown>;
+    }> = [];
 
     if (appointment.user?.email) {
       tasks.push({
-        label: 'user',
+        label: "user",
         promise: sendBookingConfirmationEmail({
           email: appointment.user.email,
-          participantName: appointment.user.firstName || buildDisplayName(appointment.user, 'there'),
-          counterpartyName: buildDisplayName(appointment.expert, 'Your expert'),
-          role: 'user',
+          participantName:
+            appointment.user.firstName ||
+            buildDisplayName(appointment.user, "there"),
+          counterpartyName: buildDisplayName(appointment.expert, "Your expert"),
+          role: "user",
           sessionDateTime: startDateTime,
           duration: appointment.duration,
           consultationMethod: appointment.consultationMethod,
@@ -112,19 +134,21 @@ export const notifyParticipantsOfBooking = async (appointment: PopulatedAppointm
           planSessionNumber: appointment.planSessionNumber,
           planTotalSessions: appointment.planTotalSessions,
           price: appointment.price,
-          notes: appointment.notes
-        })
+          notes: appointment.notes,
+        }),
       });
     }
 
     if (appointment.expert?.email) {
       tasks.push({
-        label: 'expert',
+        label: "expert",
         promise: sendBookingConfirmationEmail({
           email: appointment.expert.email,
-          participantName: appointment.expert.firstName || buildDisplayName(appointment.expert, 'there'),
-          counterpartyName: buildDisplayName(appointment.user, 'Your client'),
-          role: 'expert',
+          participantName:
+            appointment.expert.firstName ||
+            buildDisplayName(appointment.expert, "there"),
+          counterpartyName: buildDisplayName(appointment.user, "Your client"),
+          role: "expert",
           sessionDateTime: startDateTime,
           duration: appointment.duration,
           consultationMethod: appointment.consultationMethod,
@@ -133,8 +157,8 @@ export const notifyParticipantsOfBooking = async (appointment: PopulatedAppointm
           planSessionNumber: appointment.planSessionNumber,
           planTotalSessions: appointment.planTotalSessions,
           price: appointment.price,
-          notes: appointment.notes
-        })
+          notes: appointment.notes,
+        }),
       });
     }
 
@@ -142,79 +166,90 @@ export const notifyParticipantsOfBooking = async (appointment: PopulatedAppointm
       return;
     }
 
-    const results = await Promise.allSettled(tasks.map(task => task.promise));
+    const results = await Promise.allSettled(tasks.map((task) => task.promise));
     results.forEach((result, index) => {
-      if (result.status === 'rejected') {
+      if (result.status === "rejected") {
         logger.error(
           `Failed to send booking confirmation email to ${tasks[index].label} for appointment ${appointment._id}`,
-          result.reason
+          result.reason,
         );
       }
     });
   } catch (error) {
-    logger.error(`Error while sending booking confirmation emails for appointment ${appointment._id}`, error);
+    logger.error(
+      `Error while sending booking confirmation emails for appointment ${appointment._id}`,
+      error,
+    );
   }
 };
 
-const notifyCustomerOfStatusChange = async (appointment: PopulatedAppointment, status: 'confirmed' | 'cancelled' | 'completed' | 'pending' | 'rejected') => {
+const notifyCustomerOfStatusChange = async (
+  appointment: PopulatedAppointment,
+  status: "confirmed" | "cancelled" | "completed" | "pending" | "rejected",
+) => {
   try {
     if (!appointment.user?.email) {
       return;
     }
 
     const { startDateTime } = await getSessionDateTimes(appointment);
-    const expertName = buildDisplayName(appointment.expert, 'Your expert');
+    const expertName = buildDisplayName(appointment.expert, "Your expert");
     const appointmentId = appointment._id.toString();
 
     // Send email notification
     await sendBookingStatusUpdateEmail({
       email: appointment.user.email,
-      firstName: appointment.user.firstName || buildDisplayName(appointment.user, 'there'),
+      firstName:
+        appointment.user.firstName ||
+        buildDisplayName(appointment.user, "there"),
       counterpartyName: expertName,
       status,
       sessionDateTime: startDateTime,
       consultationMethod: appointment.consultationMethod,
       sessionType: appointment.sessionType,
-      planName: appointment.planName || undefined
+      planName: appointment.planName || undefined,
     });
 
     // Send push notification
-    const dateString = startDateTime.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric',
-      year: 'numeric'
+    const dateString = startDateTime.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
     });
-    const timeString = startDateTime.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
+    const timeString = startDateTime.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
     });
 
-    if (status === 'confirmed') {
+    if (status === "confirmed") {
       await pushNotificationService.sendAppointmentConfirmed(
         (appointment.user as any)._id || appointment.user,
         expertName,
         dateString,
         timeString,
-        appointmentId
+        appointmentId,
       );
-    } else if (status === 'cancelled') {
+    } else if (status === "cancelled") {
       await pushNotificationService.sendAppointmentCancelled(
         (appointment.user as any)._id || appointment.user,
         expertName,
         undefined,
-        appointmentId
+        appointmentId,
       );
-    } else if (status === 'rejected') {
+    } else if (status === "rejected") {
       await pushNotificationService.sendExpertRejectedAppointment(
         (appointment.user as any)._id || appointment.user,
         expertName,
         undefined,
-        appointmentId
+        appointmentId,
       );
     }
   } catch (error) {
-    logger.error(`Failed to send booking status notifications (${status}) for appointment ${appointment._id}`, error);
+    logger.error(
+      `Failed to send booking status notifications (${status}) for appointment ${appointment._id}`,
+      error,
+    );
   }
 };
 
@@ -222,7 +257,7 @@ const deriveAgoraUid = (id: string) => {
   if (!id) {
     return Math.floor(Math.random() * 1_000_000);
   }
-  const cleanId = id.replace(/[^a-fA-F0-9]/g, '');
+  const cleanId = id.replace(/[^a-fA-F0-9]/g, "");
   const hexPart = cleanId.slice(-6) || cleanId;
   return parseInt(hexPart, 16);
 };
@@ -237,14 +272,14 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
   if (!expertId) {
     return res.status(400).json({
       success: false,
-      message: 'Expert ID is required'
+      message: "Expert ID is required",
     });
   }
 
   if (!date) {
     return res.status(400).json({
       success: false,
-      message: 'Date is required (format: YYYY-MM-DD)'
+      message: "Date is required (format: YYYY-MM-DD)",
     });
   }
 
@@ -253,7 +288,7 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
   if (!dateRegex.test(date as string)) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid date format. Use YYYY-MM-DD'
+      message: "Invalid date format. Use YYYY-MM-DD",
     });
   }
 
@@ -262,7 +297,7 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
   if (!expert) {
     return res.status(404).json({
       success: false,
-      message: 'Expert not found'
+      message: "Expert not found",
     });
   }
 
@@ -273,27 +308,33 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
       success: true,
       data: {
         availableSlots: [],
-        message: 'No availability set for this expert'
-      }
+        message: "No availability set for this expert",
+      },
     });
   }
 
   // Parse the requested date
   const requestedDate = new Date(date as string);
-  const dayOfWeek = requestedDate.toLocaleDateString('en-US', { weekday: 'long' });
-  
+  const dayOfWeek = requestedDate.toLocaleDateString("en-US", {
+    weekday: "long",
+  });
+
   // Find the day in availability
   const dayAvailability = availability.availability.find(
-    day => day.day === dayOfWeek
+    (day) => day.day === dayOfWeek,
   );
 
-  if (!dayAvailability || !dayAvailability.isOpen || dayAvailability.timeRanges.length === 0) {
+  if (
+    !dayAvailability ||
+    !dayAvailability.isOpen ||
+    dayAvailability.timeRanges.length === 0
+  ) {
     return res.status(200).json({
       success: true,
       data: {
         availableSlots: [],
-        message: 'Expert is not available on this day'
-      }
+        message: "Expert is not available on this day",
+      },
     });
   }
 
@@ -307,19 +348,19 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
     expert: expertId,
     sessionDate: {
       $gte: startOfDay,
-      $lte: endOfDay
+      $lte: endOfDay,
     },
-    status: { $in: ['pending', 'confirmed'] }
-  }).select('startTime endTime');
+    status: { $in: ["pending", "confirmed"] },
+  }).select("startTime endTime");
 
   // Generate available slots (30-minute intervals)
   const availableSlots: string[] = [];
   const slotDuration = 30; // minutes
 
   for (const timeRange of dayAvailability.timeRanges) {
-    const [startHour, startMin] = timeRange.startTime.split(':').map(Number);
-    const [endHour, endMin] = timeRange.endTime.split(':').map(Number);
-    
+    const [startHour, startMin] = timeRange.startTime.split(":").map(Number);
+    const [endHour, endMin] = timeRange.endTime.split(":").map(Number);
+
     let currentHour = startHour;
     let currentMin = startMin;
 
@@ -327,8 +368,8 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
       currentHour < endHour ||
       (currentHour === endHour && currentMin < endMin)
     ) {
-      const slotStart = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
-      
+      const slotStart = `${String(currentHour).padStart(2, "0")}:${String(currentMin).padStart(2, "0")}`;
+
       // Calculate slot end time
       let slotEndHour = currentHour;
       let slotEndMin = currentMin + slotDuration;
@@ -336,13 +377,13 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
         slotEndHour += Math.floor(slotEndMin / 60);
         slotEndMin = slotEndMin % 60;
       }
-      const slotEnd = `${String(slotEndHour).padStart(2, '0')}:${String(slotEndMin).padStart(2, '0')}`;
+      const slotEnd = `${String(slotEndHour).padStart(2, "0")}:${String(slotEndMin).padStart(2, "0")}`;
 
       // Check if slot overlaps with existing appointments
-      const isAvailable = !existingAppointments.some(apt => {
+      const isAvailable = !existingAppointments.some((apt) => {
         const aptStart = apt.startTime;
         const aptEnd = apt.endTime;
-        
+
         // Check for overlap
         return (
           (slotStart >= aptStart && slotStart < aptEnd) ||
@@ -375,8 +416,8 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
     data: {
       availableSlots,
       date: date as string,
-      dayOfWeek
-    }
+      dayOfWeek,
+    },
   });
 });
 
@@ -385,11 +426,11 @@ export const getAvailableSlots = asyncHandler(async (req, res) => {
 // @access  Private (User)
 export const createBooking = asyncHandler(async (req, res) => {
   const currentUser = req.user;
-  
+
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
@@ -403,13 +444,13 @@ export const createBooking = asyncHandler(async (req, res) => {
     notes,
     planId,
     planType,
-    planSessions
+    planSessions,
   } = req.body;
 
   if (!expertId) {
     return res.status(400).json({
       success: false,
-      message: 'Expert ID is required'
+      message: "Expert ID is required",
     });
   }
 
@@ -418,11 +459,13 @@ export const createBooking = asyncHandler(async (req, res) => {
   if (!expert) {
     return res.status(404).json({
       success: false,
-      message: 'Expert not found'
+      message: "Expert not found",
     });
   }
 
-  const availabilityDoc = await ExpertAvailability.findOne({ expert: expertId });
+  const availabilityDoc = await ExpertAvailability.findOne({
+    expert: expertId,
+  });
 
   type SlotInput = {
     sessionDate?: string;
@@ -439,22 +482,29 @@ export const createBooking = asyncHandler(async (req, res) => {
       startTime: slotStart,
       duration: slotDuration,
       consultationMethod: slotMethod,
-      sessionType: slotSessionType
+      sessionType: slotSessionType,
     } = slotInput;
 
-    if (!slotDate || !slotStart || !slotDuration || !slotMethod || !slotSessionType) {
+    if (
+      !slotDate ||
+      !slotStart ||
+      !slotDuration ||
+      !slotMethod ||
+      !slotSessionType
+    ) {
       res.status(400).json({
-      success: false,
-        message: 'Please provide sessionDate, startTime, duration, consultationMethod, and sessionType for each session'
+        success: false,
+        message:
+          "Please provide sessionDate, startTime, duration, consultationMethod, and sessionType for each session",
       });
       return null;
     }
 
-    const validConsultationMethods = ['video', 'audio', 'chat', 'in-person'];
+    const validConsultationMethods = ["video", "audio", "chat", "in-person"];
     if (!validConsultationMethods.includes(slotMethod)) {
       res.status(400).json({
-      success: false,
-        message: `Invalid consultation method. Must be one of: ${validConsultationMethods.join(', ')}`
+        success: false,
+        message: `Invalid consultation method. Must be one of: ${validConsultationMethods.join(", ")}`,
       });
       return null;
     }
@@ -463,27 +513,27 @@ export const createBooking = asyncHandler(async (req, res) => {
     if (expert.consultationMethods && expert.consultationMethods.length > 0) {
       if (!expert.consultationMethods.includes(slotMethod)) {
         res.status(400).json({
-      success: false,
-          message: `Expert does not offer ${slotMethod} consultations`
+          success: false,
+          message: `Expert does not offer ${slotMethod} consultations`,
         });
         return null;
       }
     }
 
-    const validSessionTypes = ['one-on-one', 'one-to-many'];
+    const validSessionTypes = ["one-on-one", "one-to-many"];
     if (!validSessionTypes.includes(slotSessionType)) {
       res.status(400).json({
         success: false,
-        message: `Invalid session type. Must be one of: ${validSessionTypes.join(', ')}`
+        message: `Invalid session type. Must be one of: ${validSessionTypes.join(", ")}`,
       });
       return null;
-  }
+    }
 
-  if (expert.sessionType && expert.sessionType.length > 0) {
+    if (expert.sessionType && expert.sessionType.length > 0) {
       if (!expert.sessionType.includes(slotSessionType)) {
         res.status(400).json({
-        success: false,
-          message: `Expert does not offer ${slotSessionType} sessions`
+          success: false,
+          message: `Expert does not offer ${slotSessionType} sessions`,
         });
         return null;
       }
@@ -492,91 +542,97 @@ export const createBooking = asyncHandler(async (req, res) => {
     if (slotDuration < 30 || slotDuration > 240 || slotDuration % 30 !== 0) {
       res.status(400).json({
         success: false,
-        message: 'Duration must be between 30 and 240 minutes and a multiple of 30'
+        message:
+          "Duration must be between 30 and 240 minutes and a multiple of 30",
       });
       return null;
     }
 
     const sessionDateTime = new Date(slotDate);
-  if (isNaN(sessionDateTime.getTime())) {
-      res.status(400).json({
-      success: false,
-      message: 'Invalid session date format'
-    });
-      return null;
-  }
-
-    const [startHour, startMin] = slotStart.split(':').map(Number);
-    const endTotalMinutes = startHour * 60 + startMin + slotDuration;
-  const endHour = Math.floor(endTotalMinutes / 60);
-  const endMin = endTotalMinutes % 60;
-  const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-
-  const startOfDay = new Date(sessionDateTime);
-  startOfDay.setHours(0, 0, 0, 0);
-  const endOfDay = new Date(sessionDateTime);
-  endOfDay.setHours(23, 59, 59, 999);
-
-  // For group sessions (one-to-many), skip conflict check - multiple customers can book the same session
-  // For one-on-one sessions, check for conflicts with other one-on-one sessions only
-  if (slotSessionType !== 'one-to-many') {
-    const existingAppointments = await Appointment.find({
-      expert: expertId,
-      sessionDate: {
-        $gte: startOfDay,
-        $lte: endOfDay
-      },
-      sessionType: 'one-on-one', // Only check conflicts with other one-on-one sessions
-      status: { $in: ['pending', 'confirmed'] }
-    }).select('startTime endTime');
-
-    const conflictingAppointment = existingAppointments.find(apt => {
-      const [aptStartHour, aptStartMin] = apt.startTime.split(':').map(Number);
-      const [aptEndHour, aptEndMin] = apt.endTime.split(':').map(Number);
-      const [reqStartHour, reqStartMin] = slotStart.split(':').map(Number);
-      const [reqEndHour, reqEndMin] = endTime.split(':').map(Number);
-      
-      const aptStartTotal = aptStartHour * 60 + aptStartMin;
-      const aptEndTotal = aptEndHour * 60 + aptEndMin;
-      const reqStartTotal = reqStartHour * 60 + reqStartMin;
-      const reqEndTotal = reqEndHour * 60 + reqEndMin;
-      
-      return (reqStartTotal < aptEndTotal && reqEndTotal > aptStartTotal);
-    });
-
-    if (conflictingAppointment) {
+    if (isNaN(sessionDateTime.getTime())) {
       res.status(400).json({
         success: false,
-        message: 'This time slot is already booked. Please select another time.'
+        message: "Invalid session date format",
       });
       return null;
     }
-  }
+
+    const [startHour, startMin] = slotStart.split(":").map(Number);
+    const endTotalMinutes = startHour * 60 + startMin + slotDuration;
+    const endHour = Math.floor(endTotalMinutes / 60);
+    const endMin = endTotalMinutes % 60;
+    const endTime = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
+
+    const startOfDay = new Date(sessionDateTime);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(sessionDateTime);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // For group sessions (one-to-many), skip conflict check - multiple customers can book the same session
+    // For one-on-one sessions, check for conflicts with other one-on-one sessions only
+    if (slotSessionType !== "one-to-many") {
+      const existingAppointments = await Appointment.find({
+        expert: expertId,
+        sessionDate: {
+          $gte: startOfDay,
+          $lte: endOfDay,
+        },
+        sessionType: "one-on-one", // Only check conflicts with other one-on-one sessions
+        status: { $in: ["pending", "confirmed"] },
+      }).select("startTime endTime");
+
+      const conflictingAppointment = existingAppointments.find((apt) => {
+        const [aptStartHour, aptStartMin] = apt.startTime
+          .split(":")
+          .map(Number);
+        const [aptEndHour, aptEndMin] = apt.endTime.split(":").map(Number);
+        const [reqStartHour, reqStartMin] = slotStart.split(":").map(Number);
+        const [reqEndHour, reqEndMin] = endTime.split(":").map(Number);
+
+        const aptStartTotal = aptStartHour * 60 + aptStartMin;
+        const aptEndTotal = aptEndHour * 60 + aptEndMin;
+        const reqStartTotal = reqStartHour * 60 + reqStartMin;
+        const reqEndTotal = reqEndHour * 60 + reqEndMin;
+
+        return reqStartTotal < aptEndTotal && reqEndTotal > aptStartTotal;
+      });
+
+      if (conflictingAppointment) {
+        res.status(400).json({
+          success: false,
+          message:
+            "This time slot is already booked. Please select another time.",
+        });
+        return null;
+      }
+    }
 
     // Skip availability check for group sessions (one-to-many) since expert has already decided the timing
     if (!slotInput.skipAvailabilityCheck && availabilityDoc) {
-  const dayOfWeek = sessionDateTime.toLocaleDateString('en-US', { weekday: 'long' });
+      const dayOfWeek = sessionDateTime.toLocaleDateString("en-US", {
+        weekday: "long",
+      });
       const dayAvailability = availabilityDoc.availability.find(
-      day => day.day === dayOfWeek
-    );
+        (day) => day.day === dayOfWeek,
+      );
 
-    if (!dayAvailability || !dayAvailability.isOpen) {
+      if (!dayAvailability || !dayAvailability.isOpen) {
         res.status(400).json({
-        success: false,
-        message: `Expert is not available on ${dayOfWeek}`
-      });
+          success: false,
+          message: `Expert is not available on ${dayOfWeek}`,
+        });
         return null;
-    }
+      }
 
-    const isWithinRange = dayAvailability.timeRanges.some(range => {
+      const isWithinRange = dayAvailability.timeRanges.some((range) => {
         return slotStart >= range.startTime && endTime <= range.endTime;
-    });
-
-    if (!isWithinRange) {
-        res.status(400).json({
-        success: false,
-        message: 'Requested time is outside expert\'s available hours'
       });
+
+      if (!isWithinRange) {
+        res.status(400).json({
+          success: false,
+          message: "Requested time is outside expert's available hours",
+        });
         return null;
       }
     }
@@ -590,47 +646,47 @@ export const createBooking = asyncHandler(async (req, res) => {
     if (!plan) {
       return res.status(404).json({
         success: false,
-        message: 'Plan not found'
+        message: "Plan not found",
       });
     }
 
     if (plan.expert.toString() !== expertId) {
       return res.status(400).json({
         success: false,
-        message: 'Plan does not belong to this expert'
+        message: "Plan does not belong to this expert",
       });
     }
 
     if (plan.isActive === false) {
       return res.status(400).json({
         success: false,
-        message: 'This plan is no longer active'
+        message: "This plan is no longer active",
       });
     }
 
-    const resolvedPlanType = plan.type as 'single' | 'monthly';
+    const resolvedPlanType = plan.type as "single" | "monthly";
     if (planType && planType !== resolvedPlanType) {
       return res.status(400).json({
         success: false,
-        message: 'Plan type mismatch'
+        message: "Plan type mismatch",
       });
     }
 
     if (!planSessions || planSessions.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide session details for the selected plan'
+        message: "Please provide session details for the selected plan",
       });
     }
 
     const planInstanceId = new mongoose.Types.ObjectId().toString();
 
-    if (resolvedPlanType === 'single') {
+    if (resolvedPlanType === "single") {
       const sessionPayload = planSessions[0];
       const finalDuration = sessionPayload.duration || plan.duration || 60;
 
       // Skip availability check for group sessions (one-to-many) since expert has already decided the timing
-      const isGroupSession = plan.sessionFormat === 'one-to-many';
+      const isGroupSession = plan.sessionFormat === "one-to-many";
 
       const validatedSlot = await validateSlotInput({
         sessionDate: sessionPayload.sessionDate,
@@ -638,17 +694,20 @@ export const createBooking = asyncHandler(async (req, res) => {
         duration: finalDuration,
         consultationMethod: sessionPayload.consultationMethod,
         sessionType: sessionPayload.sessionType,
-        skipAvailabilityCheck: isGroupSession
+        skipAvailabilityCheck: isGroupSession,
       });
 
       if (!validatedSlot) {
         return;
       }
 
-      if (plan.sessionFormat && plan.sessionFormat !== sessionPayload.sessionType) {
+      if (
+        plan.sessionFormat &&
+        plan.sessionFormat !== sessionPayload.sessionType
+      ) {
         return res.status(400).json({
           success: false,
-          message: `Plan requires ${plan.sessionFormat} sessions`
+          message: `Plan requires ${plan.sessionFormat} sessions`,
         });
       }
 
@@ -658,28 +717,33 @@ export const createBooking = asyncHandler(async (req, res) => {
           user: currentUser._id,
           planId: plan._id,
           isDynamicGroupSession: true,
-          status: { $in: ['pending', 'confirmed'] }
+          status: { $in: ["pending", "confirmed"] },
         });
 
         if (existingGroupBooking) {
           return res.status(400).json({
             success: false,
-            message: 'You have already booked this group session. You cannot book the same session twice.'
+            message:
+              "You have already booked this group session. You cannot book the same session twice.",
           });
         }
       }
 
-      const price = plan.price ?? Math.round(((expert.hourlyRate || 0) * finalDuration) / 60);
+      const price =
+        plan.price ??
+        Math.round(((expert.hourlyRate || 0) * finalDuration) / 60);
 
       // For dynamic group sessions (single type, one-to-many), don't store fixed date/time
       // Date/time will be fetched dynamically from the plan
-      const isDynamicGroupSession = isGroupSession && plan.type === 'single';
-      
+      const isDynamicGroupSession = isGroupSession && plan.type === "single";
+
       const appointment = await Appointment.create({
         user: currentUser._id,
         expert: expertId,
         // For dynamic group sessions, don't store fixed date/time - fetch from plan dynamically
-        sessionDate: isDynamicGroupSession ? undefined : validatedSlot.sessionDateTime,
+        sessionDate: isDynamicGroupSession
+          ? undefined
+          : validatedSlot.sessionDateTime,
         startTime: isDynamicGroupSession ? undefined : sessionPayload.startTime,
         endTime: isDynamicGroupSession ? undefined : validatedSlot.endTime,
         duration: finalDuration,
@@ -687,8 +751,8 @@ export const createBooking = asyncHandler(async (req, res) => {
         sessionType: sessionPayload.sessionType,
         price,
         notes: notes || undefined,
-        status: 'pending',
-        paymentStatus: price > 0 ? 'pending' : undefined, // Set payment status if payment is required
+        status: "pending",
+        paymentStatus: price > 0 ? "pending" : undefined, // Set payment status if payment is required
         planId: plan._id,
         planType: resolvedPlanType,
         planInstanceId,
@@ -696,12 +760,15 @@ export const createBooking = asyncHandler(async (req, res) => {
         planSessionNumber: 1,
         planTotalSessions: 1,
         planPrice: price,
-        isDynamicGroupSession: isDynamicGroupSession
+        isDynamicGroupSession: isDynamicGroupSession,
       } as any);
 
-      await appointment.populate('user', 'firstName lastName email');
-      await appointment.populate('expert', 'firstName lastName specialization profileImage email');
-      
+      await appointment.populate("user", "firstName lastName email");
+      await appointment.populate(
+        "expert",
+        "firstName lastName specialization profileImage email",
+      );
+
       // Only send emails if payment is not required (price is 0 or free)
       // For paid bookings, emails will be sent after payment is verified
       if (price <= 0) {
@@ -712,9 +779,10 @@ export const createBooking = asyncHandler(async (req, res) => {
         success: true,
         data: {
           planInstanceId,
-          appointment
+          appointment,
         },
-        message: 'Plan booking created successfully. Waiting for expert confirmation.'
+        message:
+          "Plan booking created successfully. Waiting for expert confirmation.",
       });
     }
 
@@ -722,14 +790,15 @@ export const createBooking = asyncHandler(async (req, res) => {
     if (!plan.classesPerMonth || !plan.monthlyPrice) {
       return res.status(400).json({
         success: false,
-        message: 'Monthly plans must define classes per month and monthly price'
+        message:
+          "Monthly plans must define classes per month and monthly price",
       });
     }
 
     if (planSessions.length !== plan.classesPerMonth) {
       return res.status(400).json({
         success: false,
-        message: `Please schedule ${plan.classesPerMonth} classes for this subscription`
+        message: `Please schedule ${plan.classesPerMonth} classes for this subscription`,
       });
     }
 
@@ -740,17 +809,19 @@ export const createBooking = asyncHandler(async (req, res) => {
       if (uniqueKeys.has(key)) {
         return res.status(400).json({
           success: false,
-          message: 'Each session in the subscription must have a unique date and start time'
+          message:
+            "Each session in the subscription must have a unique date and start time",
         });
       }
       uniqueKeys.add(key);
     }
 
-    const perSessionPrice = Math.round((plan.monthlyPrice / plan.classesPerMonth) * 100) / 100;
+    const perSessionPrice =
+      Math.round((plan.monthlyPrice / plan.classesPerMonth) * 100) / 100;
     const createdAppointments: IAppointment[] = [];
 
     // Skip availability check for group sessions (one-to-many) since expert has already decided the timing
-    const isGroupSession = plan.sessionFormat === 'one-to-many';
+    const isGroupSession = plan.sessionFormat === "one-to-many";
 
     for (let i = 0; i < planSessions.length; i++) {
       const sessionPayload = planSessions[i];
@@ -762,17 +833,20 @@ export const createBooking = asyncHandler(async (req, res) => {
         duration: finalDuration,
         consultationMethod: sessionPayload.consultationMethod,
         sessionType: sessionPayload.sessionType,
-        skipAvailabilityCheck: isGroupSession
+        skipAvailabilityCheck: isGroupSession,
       });
 
       if (!validatedSlot) {
         return;
       }
 
-      if (plan.sessionFormat && plan.sessionFormat !== sessionPayload.sessionType) {
+      if (
+        plan.sessionFormat &&
+        plan.sessionFormat !== sessionPayload.sessionType
+      ) {
         return res.status(400).json({
           success: false,
-          message: `Plan requires ${plan.sessionFormat} sessions`
+          message: `Plan requires ${plan.sessionFormat} sessions`,
         });
       }
 
@@ -787,15 +861,15 @@ export const createBooking = asyncHandler(async (req, res) => {
         sessionType: sessionPayload.sessionType,
         price: perSessionPrice,
         notes: notes || undefined,
-        status: 'pending',
-        paymentStatus: perSessionPrice > 0 ? 'pending' : undefined, // Set payment status if payment is required
+        status: "pending",
+        paymentStatus: perSessionPrice > 0 ? "pending" : undefined, // Set payment status if payment is required
         planId: plan._id,
         planType: resolvedPlanType,
         planInstanceId,
         planName: plan.name,
         planSessionNumber: i + 1,
         planTotalSessions: plan.classesPerMonth,
-        planPrice: perSessionPrice
+        planPrice: perSessionPrice,
       });
 
       createdAppointments.push(appointment);
@@ -806,24 +880,33 @@ export const createBooking = asyncHandler(async (req, res) => {
     const totalPrice = plan.monthlyPrice || 0;
     if (totalPrice <= 0) {
       await Promise.all(
-        createdAppointments.map(async appointment => {
-          await appointment.populate('user', 'firstName lastName email');
-          await appointment.populate('expert', 'firstName lastName specialization profileImage email');
-          await notifyParticipantsOfBooking(appointment as PopulatedAppointment);
-        })
+        createdAppointments.map(async (appointment) => {
+          await appointment.populate("user", "firstName lastName email");
+          await appointment.populate(
+            "expert",
+            "firstName lastName specialization profileImage email",
+          );
+          await notifyParticipantsOfBooking(
+            appointment as PopulatedAppointment,
+          );
+        }),
       );
     } else {
       // Just populate for later use, but don't send emails yet
       await Promise.all(
-        createdAppointments.map(async appointment => {
-          await appointment.populate('user', 'firstName lastName email');
-          await appointment.populate('expert', 'firstName lastName specialization profileImage email');
-        })
+        createdAppointments.map(async (appointment) => {
+          await appointment.populate("user", "firstName lastName email");
+          await appointment.populate(
+            "expert",
+            "firstName lastName specialization profileImage email",
+          );
+        }),
       );
     }
 
     // Create UserSubscription record for monthly plans
-    const UserSubscription = (await import('../models/UserSubscription')).default;
+    const UserSubscription = (await import("../models/UserSubscription"))
+      .default;
     const startDate = new Date();
     const expiryDate = new Date();
     expiryDate.setMonth(expiryDate.getMonth() + 1); // 1 month from now
@@ -835,7 +918,7 @@ export const createBooking = asyncHandler(async (req, res) => {
       plan: plan._id,
       planInstanceId,
       planName: plan.name,
-      planType: 'monthly',
+      planType: "monthly",
       startDate,
       expiryDate,
       nextBillingDate,
@@ -843,8 +926,8 @@ export const createBooking = asyncHandler(async (req, res) => {
       sessionsUsed: 0,
       sessionsRemaining: plan.classesPerMonth,
       monthlyPrice: plan.monthlyPrice,
-      status: 'active',
-      autoRenewal: true
+      status: "active",
+      autoRenewal: true,
     });
 
     return res.status(201).json({
@@ -853,17 +936,25 @@ export const createBooking = asyncHandler(async (req, res) => {
         planInstanceId,
         totalPrice: plan.monthlyPrice,
         totalSessions: plan.classesPerMonth,
-        appointments: createdAppointments
+        appointments: createdAppointments,
       },
-      message: 'Subscription booking created successfully. Waiting for expert confirmation.'
+      message:
+        "Subscription booking created successfully. Waiting for expert confirmation.",
     });
   }
 
   // Validation for single ad-hoc bookings (no plan)
-  if (!sessionDate || !startTime || !duration || !consultationMethod || !sessionType) {
+  if (
+    !sessionDate ||
+    !startTime ||
+    !duration ||
+    !consultationMethod ||
+    !sessionType
+  ) {
     return res.status(400).json({
       success: false,
-      message: 'Please provide all required fields: expertId, sessionDate, startTime, duration, consultationMethod, sessionType'
+      message:
+        "Please provide all required fields: expertId, sessionDate, startTime, duration, consultationMethod, sessionType",
     });
   }
   const singleSlot = await validateSlotInput({
@@ -871,7 +962,7 @@ export const createBooking = asyncHandler(async (req, res) => {
     startTime,
     duration,
     consultationMethod,
-    sessionType
+    sessionType,
   });
 
   if (!singleSlot) {
@@ -894,14 +985,17 @@ export const createBooking = asyncHandler(async (req, res) => {
     sessionType,
     price,
     notes: notes || undefined,
-    status: 'pending',
-    paymentStatus: price > 0 ? 'pending' : undefined // Set payment status if payment is required
+    status: "pending",
+    paymentStatus: price > 0 ? "pending" : undefined, // Set payment status if payment is required
   });
 
   // Populate user and expert details
-  await appointment.populate('user', 'firstName lastName email');
-  await appointment.populate('expert', 'firstName lastName specialization profileImage email');
-  
+  await appointment.populate("user", "firstName lastName email");
+  await appointment.populate(
+    "expert",
+    "firstName lastName specialization profileImage email",
+  );
+
   // Only send emails if payment is not required (price is 0 or free)
   // For paid bookings, emails will be sent after payment is verified
   if (price <= 0) {
@@ -911,9 +1005,9 @@ export const createBooking = asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     data: {
-      appointment
+      appointment,
     },
-    message: 'Booking created successfully. Waiting for expert confirmation.'
+    message: "Booking created successfully. Waiting for expert confirmation.",
   });
 });
 
@@ -922,11 +1016,11 @@ export const createBooking = asyncHandler(async (req, res) => {
 // @access  Private (User)
 export const getUserBookings = asyncHandler(async (req, res) => {
   const currentUser = req.user;
-  
+
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
@@ -941,8 +1035,11 @@ export const getUserBookings = asyncHandler(async (req, res) => {
   }
 
   const appointments = await Appointment.find(query)
-    .populate('expert', 'firstName lastName specialization profileImage hourlyRate')
-    .populate('planId', 'scheduledDate scheduledTime duration sessionFormat')
+    .populate(
+      "expert",
+      "firstName lastName specialization profileImage hourlyRate",
+    )
+    .populate("planId", "scheduledDate scheduledTime duration sessionFormat")
     .sort({ sessionDate: 1, startTime: 1 })
     .skip(skip)
     .limit(limitNum);
@@ -953,13 +1050,13 @@ export const getUserBookings = asyncHandler(async (req, res) => {
       const plan = apt.planId;
       if (plan.scheduledDate && plan.scheduledTime) {
         // Calculate endTime from startTime and duration
-        const [startHour, startMin] = plan.scheduledTime.split(':').map(Number);
+        const [startHour, startMin] = plan.scheduledTime.split(":").map(Number);
         const duration = plan.duration || apt.duration || 60;
         const endTotalMinutes = startHour * 60 + startMin + duration;
         const endHour = Math.floor(endTotalMinutes / 60);
         const endMin = endTotalMinutes % 60;
-        const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-        
+        const endTime = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
+
         apt.sessionDate = plan.scheduledDate;
         apt.startTime = plan.scheduledTime;
         apt.endTime = endTime;
@@ -981,9 +1078,9 @@ export const getUserBookings = asyncHandler(async (req, res) => {
         page: pageNum,
         limit: limitNum,
         total,
-        pages: Math.ceil(total / limitNum)
-      }
-    }
+        pages: Math.ceil(total / limitNum),
+      },
+    },
   });
 });
 
@@ -992,27 +1089,29 @@ export const getUserBookings = asyncHandler(async (req, res) => {
 // @access  Private (Expert)
 export const getExpertBookings = asyncHandler(async (req, res) => {
   const currentUser = req.user;
-  
+
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   // Find expert by user ID or email
   const userId = currentUser._id.toString();
   const userEmail = currentUser.email || (currentUser as any).email;
-  
-  let expert = await Expert.findById(userId).select('_id');
+
+  let expert = await Expert.findById(userId).select("_id");
   if (!expert && userEmail) {
-    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select(
+      "_id",
+    );
   }
 
   if (!expert) {
     return res.status(404).json({
       success: false,
-      message: 'Expert profile not found'
+      message: "Expert profile not found",
     });
   }
 
@@ -1027,9 +1126,17 @@ export const getExpertBookings = asyncHandler(async (req, res) => {
     query.status = status;
   }
 
+  // Only show appointments where payment is completed (paid) or price is 0 (free)
+  // Do NOT show appointments with failed or pending payment to expert
+  query.$or = [
+    { paymentStatus: "paid" },
+    { price: 0 },
+    { price: { $exists: false } },
+  ];
+
   const appointments = await Appointment.find(query)
-    .populate('user', 'firstName lastName email')
-    .populate('planId', 'scheduledDate scheduledTime duration sessionFormat')
+    .populate("user", "firstName lastName email")
+    .populate("planId", "scheduledDate scheduledTime duration sessionFormat")
     .sort({ sessionDate: 1, startTime: 1 })
     .skip(skip)
     .limit(limitNum);
@@ -1040,13 +1147,13 @@ export const getExpertBookings = asyncHandler(async (req, res) => {
       const plan = apt.planId;
       if (plan.scheduledDate && plan.scheduledTime) {
         // Calculate endTime from startTime and duration
-        const [startHour, startMin] = plan.scheduledTime.split(':').map(Number);
+        const [startHour, startMin] = plan.scheduledTime.split(":").map(Number);
         const duration = plan.duration || apt.duration || 60;
         const endTotalMinutes = startHour * 60 + startMin + duration;
         const endHour = Math.floor(endTotalMinutes / 60);
         const endMin = endTotalMinutes % 60;
-        const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-        
+        const endTime = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
+
         apt.sessionDate = plan.scheduledDate;
         apt.startTime = plan.scheduledTime;
         apt.endTime = endTime;
@@ -1068,9 +1175,9 @@ export const getExpertBookings = asyncHandler(async (req, res) => {
         page: pageNum,
         limit: limitNum,
         total,
-        pages: Math.ceil(total / limitNum)
-      }
-    }
+        pages: Math.ceil(total / limitNum),
+      },
+    },
   });
 });
 
@@ -1085,22 +1192,28 @@ export const updateBookingStatus = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   if (!status) {
     return res.status(400).json({
       success: false,
-      message: 'Status is required'
+      message: "Status is required",
     });
   }
 
-  const validStatuses = ['pending', 'confirmed', 'completed', 'cancelled', 'rejected'];
+  const validStatuses = [
+    "pending",
+    "confirmed",
+    "completed",
+    "cancelled",
+    "rejected",
+  ];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({
       success: false,
-      message: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+      message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
     });
   }
 
@@ -1108,34 +1221,48 @@ export const updateBookingStatus = asyncHandler(async (req, res) => {
   if (!appointment) {
     return res.status(404).json({
       success: false,
-      message: 'Appointment not found'
+      message: "Appointment not found",
     });
   }
 
   // Check if user has permission (either the user or the expert)
   const userId = currentUser._id.toString();
   const userEmail = currentUser.email || (currentUser as any).email;
-  
+
   const isUser = appointment.user.toString() === userId;
-  
-  let expert = await Expert.findById(userId).select('_id');
+
+  let expert = await Expert.findById(userId).select("_id");
   if (!expert && userEmail) {
-    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+    expert = await Expert.findOne({ email: userEmail.toLowerCase() }).select(
+      "_id",
+    );
   }
-  const isExpert = expert && appointment.expert.toString() === expert._id.toString();
+  const isExpert =
+    expert && appointment.expert.toString() === expert._id.toString();
 
   if (!isUser && !isExpert) {
     return res.status(403).json({
       success: false,
-      message: 'You do not have permission to update this appointment'
+      message: "You do not have permission to update this appointment",
     });
+  }
+
+  // Block expert from confirming a booking where payment is not completed
+  if (isExpert && status === "confirmed") {
+    if (appointment.price > 0 && appointment.paymentStatus !== "paid") {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Cannot confirm booking: payment has not been completed by the user.",
+      });
+    }
   }
 
   // Update status
   appointment.status = status as any;
 
-  if (status === 'cancelled') {
-    appointment.cancelledBy = isUser ? 'user' : 'expert';
+  if (status === "cancelled") {
+    appointment.cancelledBy = isUser ? "user" : "expert";
     if (cancellationReason) {
       appointment.cancellationReason = cancellationReason;
     }
@@ -1144,19 +1271,25 @@ export const updateBookingStatus = asyncHandler(async (req, res) => {
   await appointment.save();
 
   // Populate for response
-  await appointment.populate('user', 'firstName lastName email');
-  await appointment.populate('expert', 'firstName lastName specialization profileImage');
+  await appointment.populate("user", "firstName lastName email");
+  await appointment.populate(
+    "expert",
+    "firstName lastName specialization profileImage",
+  );
 
-  if (status === 'confirmed' && (isUser || isExpert)) {
-    await notifyCustomerOfStatusChange(appointment as PopulatedAppointment, 'confirmed');
+  if (status === "confirmed" && (isUser || isExpert)) {
+    await notifyCustomerOfStatusChange(
+      appointment as PopulatedAppointment,
+      "confirmed",
+    );
   }
 
   res.status(200).json({
     success: true,
     data: {
-      appointment
+      appointment,
     },
-    message: `Appointment ${status} successfully`
+    message: `Appointment ${status} successfully`,
   });
 });
 
@@ -1171,14 +1304,14 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   if (!sessionDate || !startTime || !duration) {
     return res.status(400).json({
       success: false,
-      message: 'Please provide sessionDate, startTime, and duration'
+      message: "Please provide sessionDate, startTime, and duration",
     });
   }
 
@@ -1186,7 +1319,8 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (duration < 30 || duration > 240 || duration % 30 !== 0) {
     return res.status(400).json({
       success: false,
-      message: 'Duration must be between 30 and 240 minutes and a multiple of 30'
+      message:
+        "Duration must be between 30 and 240 minutes and a multiple of 30",
     });
   }
 
@@ -1194,7 +1328,7 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (!appointment) {
     return res.status(404).json({
       success: false,
-      message: 'Appointment not found'
+      message: "Appointment not found",
     });
   }
 
@@ -1203,25 +1337,28 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (appointment.user.toString() !== userId) {
     return res.status(403).json({
       success: false,
-      message: 'You do not have permission to reschedule this appointment'
+      message: "You do not have permission to reschedule this appointment",
     });
   }
 
   // Cannot reschedule cancelled or completed appointments
-  if (appointment.status === 'cancelled' || appointment.status === 'completed') {
+  if (
+    appointment.status === "cancelled" ||
+    appointment.status === "completed"
+  ) {
     return res.status(400).json({
       success: false,
-      message: 'Cannot reschedule a cancelled or completed appointment'
+      message: "Cannot reschedule a cancelled or completed appointment",
     });
   }
 
   // Calculate end time
-  const [startHour, startMin] = startTime.split(':').map(Number);
+  const [startHour, startMin] = startTime.split(":").map(Number);
   const startTotal = startHour * 60 + startMin;
   const endTotal = startTotal + duration;
   const endHour = Math.floor(endTotal / 60);
   const endMin = endTotal % 60;
-  const endTime = `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
+  const endTime = `${String(endHour).padStart(2, "0")}:${String(endMin).padStart(2, "0")}`;
 
   // Validate date format and ensure it's not in the past
   const newSessionDate = new Date(sessionDate);
@@ -1233,7 +1370,7 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (sessionDateOnly < today) {
     return res.status(400).json({
       success: false,
-      message: 'Cannot reschedule to a past date'
+      message: "Cannot reschedule to a past date",
     });
   }
 
@@ -1243,11 +1380,11 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
     const currentHour = now.getHours();
     const currentMin = now.getMinutes();
     const currentTotal = currentHour * 60 + currentMin;
-    
+
     if (startTotal < currentTotal) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot reschedule to a time in the past'
+        message: "Cannot reschedule to a time in the past",
       });
     }
   }
@@ -1257,17 +1394,17 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (!expert) {
     return res.status(404).json({
       success: false,
-      message: 'Expert not found'
+      message: "Expert not found",
     });
   }
 
   // Check if this is a group session - prevent rescheduling group sessions
-  let isGroupSession = appointment.sessionType === 'one-to-many';
-  
+  let isGroupSession = appointment.sessionType === "one-to-many";
+
   // Also check if the appointment is part of a group session plan
   if (!isGroupSession && appointment.planId) {
     const plan = await Plan.findById(appointment.planId);
-    if (plan && plan.sessionFormat === 'one-to-many') {
+    if (plan && plan.sessionFormat === "one-to-many") {
       isGroupSession = true;
     }
   }
@@ -1276,7 +1413,8 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (isGroupSession) {
     return res.status(400).json({
       success: false,
-      message: 'Group sessions cannot be rescheduled. Please contact the expert if you need to change the session time.'
+      message:
+        "Group sessions cannot be rescheduled. Please contact the expert if you need to change the session time.",
     });
   }
 
@@ -1285,25 +1423,26 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   const existingAppointments = await Appointment.find({
     expert: appointment.expert,
     sessionDate: newSessionDate,
-    sessionType: 'one-on-one', // Only check conflicts with other one-on-one sessions
-    status: { $in: ['pending', 'confirmed'] },
-    _id: { $ne: appointment._id } // Exclude current appointment
+    sessionType: "one-on-one", // Only check conflicts with other one-on-one sessions
+    status: { $in: ["pending", "confirmed"] },
+    _id: { $ne: appointment._id }, // Exclude current appointment
   });
 
-  const conflictingAppointment = existingAppointments.find(apt => {
-    const [aptStartHour, aptStartMin] = apt.startTime.split(':').map(Number);
-    const [aptEndHour, aptEndMin] = apt.endTime.split(':').map(Number);
-    
+  const conflictingAppointment = existingAppointments.find((apt) => {
+    const [aptStartHour, aptStartMin] = apt.startTime.split(":").map(Number);
+    const [aptEndHour, aptEndMin] = apt.endTime.split(":").map(Number);
+
     const aptStartTotal = aptStartHour * 60 + aptStartMin;
     const aptEndTotal = aptEndHour * 60 + aptEndMin;
-    
-    return (startTotal < aptEndTotal && endTotal > aptStartTotal);
+
+    return startTotal < aptEndTotal && endTotal > aptStartTotal;
   });
 
   if (conflictingAppointment) {
     return res.status(400).json({
       success: false,
-      message: 'The selected time slot is already booked. Please choose another time.'
+      message:
+        "The selected time slot is already booked. Please choose another time.",
     });
   }
 
@@ -1311,36 +1450,47 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   if (!isGroupSession) {
     // Check expert availability for the new date
     const availability = await ExpertAvailability.findOne({
-      expert: appointment.expert
+      expert: appointment.expert,
     });
 
     if (!availability) {
       return res.status(400).json({
         success: false,
-        message: 'Expert has not set their availability'
+        message: "Expert has not set their availability",
       });
     }
 
     // Parse the requested date to get day name
-    const dayOfWeek = newSessionDate.toLocaleDateString('en-US', { weekday: 'long' }); // e.g., "Tuesday"
-    
+    const dayOfWeek = newSessionDate.toLocaleDateString("en-US", {
+      weekday: "long",
+    }); // e.g., "Tuesday"
+
     // Find the day in availability array
     const dayAvailability = availability.availability.find(
-      day => day.day === dayOfWeek
+      (day) => day.day === dayOfWeek,
     );
 
-    if (!dayAvailability || !dayAvailability.isOpen || !dayAvailability.timeRanges || dayAvailability.timeRanges.length === 0) {
+    if (
+      !dayAvailability ||
+      !dayAvailability.isOpen ||
+      !dayAvailability.timeRanges ||
+      dayAvailability.timeRanges.length === 0
+    ) {
       return res.status(400).json({
         success: false,
-        message: `Expert is not available on ${dayOfWeek}`
+        message: `Expert is not available on ${dayOfWeek}`,
       });
     }
 
     // Check if the time slot falls within any of the expert's available time ranges for that day
     let isWithinAvailableHours = false;
     for (const timeRange of dayAvailability.timeRanges) {
-      const [rangeStartHour, rangeStartMin] = timeRange.startTime.split(':').map(Number);
-      const [rangeEndHour, rangeEndMin] = timeRange.endTime.split(':').map(Number);
+      const [rangeStartHour, rangeStartMin] = timeRange.startTime
+        .split(":")
+        .map(Number);
+      const [rangeEndHour, rangeEndMin] = timeRange.endTime
+        .split(":")
+        .map(Number);
       const rangeStartTotal = rangeStartHour * 60 + rangeStartMin;
       const rangeEndTotal = rangeEndHour * 60 + rangeEndMin;
 
@@ -1353,11 +1503,11 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
 
     if (!isWithinAvailableHours) {
       const timeRangesStr = dayAvailability.timeRanges
-        .map(range => `${range.startTime} - ${range.endTime}`)
-        .join(', ');
+        .map((range) => `${range.startTime} - ${range.endTime}`)
+        .join(", ");
       return res.status(400).json({
         success: false,
-        message: `The selected time is outside expert's available hours on ${dayOfWeek} (${timeRangesStr})`
+        message: `The selected time is outside expert's available hours on ${dayOfWeek} (${timeRangesStr})`,
       });
     }
   }
@@ -1367,22 +1517,26 @@ export const rescheduleBooking = asyncHandler(async (req, res) => {
   appointment.startTime = startTime;
   appointment.endTime = endTime;
   appointment.duration = duration;
-  appointment.status = 'pending'; // Reset to pending for expert confirmation
+  appointment.status = "pending"; // Reset to pending for expert confirmation
   appointment.cancelledBy = undefined;
   appointment.cancellationReason = undefined;
 
   await appointment.save();
 
   // Populate for response
-  await appointment.populate('user', 'firstName lastName email');
-  await appointment.populate('expert', 'firstName lastName specialization profileImage');
+  await appointment.populate("user", "firstName lastName email");
+  await appointment.populate(
+    "expert",
+    "firstName lastName specialization profileImage",
+  );
 
   res.status(200).json({
     success: true,
     data: {
-      appointment
+      appointment,
     },
-    message: 'Appointment rescheduled successfully. Waiting for expert confirmation.'
+    message:
+      "Appointment rescheduled successfully. Waiting for expert confirmation.",
   });
 });
 
@@ -1396,36 +1550,37 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   if (!ENV.AGORA_APP_ID || !ENV.AGORA_APP_CERTIFICATE) {
     return res.status(500).json({
       success: false,
-      message: 'Agora credentials are not configured on the server'
+      message: "Agora credentials are not configured on the server",
     });
   }
 
   const appointment = await Appointment.findById(id)
-    .populate('user', 'firstName lastName email')
-    .populate('expert', 'firstName lastName email')
-    .populate('planId', 'scheduledDate scheduledTime duration sessionFormat');
+    .populate("user", "firstName lastName email")
+    .populate("expert", "firstName lastName email")
+    .populate("planId", "scheduledDate scheduledTime duration sessionFormat");
 
   if (!appointment) {
     return res.status(404).json({
       success: false,
-      message: 'Appointment not found'
+      message: "Appointment not found",
     });
   }
 
-  const isVideoCall = appointment.consultationMethod === 'video';
-  const isAudioCall = appointment.consultationMethod === 'audio';
+  const isVideoCall = appointment.consultationMethod === "video";
+  const isAudioCall = appointment.consultationMethod === "audio";
 
   if (!isVideoCall && !isAudioCall) {
     return res.status(400).json({
       success: false,
-      message: 'Realtime calling is only available for audio or video consultation bookings'
+      message:
+        "Realtime calling is only available for audio or video consultation bookings",
     });
   }
 
@@ -1434,28 +1589,35 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
 
   const isUser = appointment.user._id.toString() === userId;
 
-  let expertRecord = await Expert.findById(userId).select('_id');
+  let expertRecord = await Expert.findById(userId).select("_id");
   if (!expertRecord && userEmail) {
-    expertRecord = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+    expertRecord = await Expert.findOne({
+      email: userEmail.toLowerCase(),
+    }).select("_id");
   }
-  const isExpert = expertRecord && appointment.expert._id.toString() === expertRecord._id.toString();
+  const isExpert =
+    expertRecord &&
+    appointment.expert._id.toString() === expertRecord._id.toString();
 
   if (!isUser && !isExpert) {
     return res.status(403).json({
       success: false,
-      message: 'You do not have permission to access this booking'
+      message: "You do not have permission to access this booking",
     });
   }
 
-  if (appointment.status !== 'confirmed') {
+  if (appointment.status !== "confirmed") {
     return res.status(400).json({
       success: false,
-      message: 'Session must be confirmed before joining the call'
+      message: "Session must be confirmed before joining the call",
     });
   }
 
   const { startDateTime, endDateTime } = await getSessionDateTimes(appointment);
-  const joinWindowMinutes = Math.min(Math.max(ENV.AGORA_JOIN_WINDOW_MINUTES || 2, 0), 2);
+  const joinWindowMinutes = Math.min(
+    Math.max(ENV.AGORA_JOIN_WINDOW_MINUTES || 2, 0),
+    2,
+  );
   const joinWindowMillis = joinWindowMinutes * 60 * 1000;
   const now = new Date();
   const nowTime = now.getTime();
@@ -1466,7 +1628,7 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
   if (nowTime > endTime) {
     return res.status(400).json({
       success: false,
-      message: 'This session has already ended'
+      message: "This session has already ended",
     });
   }
 
@@ -1479,25 +1641,25 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     if (nowTime < earliestJoinTime) {
       return res.status(400).json({
         success: false,
-        message: `You can join this session ${joinWindowMinutes} minutes before the scheduled start time`
+        message: `You can join this session ${joinWindowMinutes} minutes before the scheduled start time`,
       });
     }
   }
 
   // Ensure agoraChannelName is set, and for group sessions, ensure shared channel
   if (!appointment.agoraChannelName) {
-    if (appointment.sessionType === 'one-to-many') {
+    if (appointment.sessionType === "one-to-many") {
       // For group sessions, use shared channel
       const groupSessionId = (appointment as any).groupSessionId;
       const isDynamicGroupSession = (appointment as any).isDynamicGroupSession;
-      
+
       if (groupSessionId) {
         // Monthly group session created by expert
         appointment.agoraChannelName = `group_${groupSessionId}`;
         // Update all appointments in this group to use the same channel
         await Appointment.updateMany(
           { groupSessionId: groupSessionId },
-          { agoraChannelName: appointment.agoraChannelName }
+          { agoraChannelName: appointment.agoraChannelName },
         );
       } else if (appointment.planId && isDynamicGroupSession) {
         // Dynamic group session plan - use planId only (not date/time since it can change)
@@ -1507,15 +1669,18 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
           {
             planId: appointment.planId,
             isDynamicGroupSession: true,
-            sessionType: 'one-to-many'
+            sessionType: "one-to-many",
           },
-          { agoraChannelName: appointment.agoraChannelName }
+          { agoraChannelName: appointment.agoraChannelName },
         );
       } else if (appointment.planId) {
         // Legacy: Single group session plan with fixed date/time
         const sessionDate = new Date(appointment.sessionDate);
-        const dateStr = sessionDate.toISOString().split('T')[0].replace(/-/g, '');
-        const timeStr = appointment.startTime?.replace(':', '') || '';
+        const dateStr = sessionDate
+          .toISOString()
+          .split("T")[0]
+          .replace(/-/g, "");
+        const timeStr = appointment.startTime?.replace(":", "") || "";
         appointment.agoraChannelName = `group_plan_${appointment.planId.toString()}_${dateStr}_${timeStr}`;
         // Update all appointments for this plan/date/time to use the same channel
         const startOfDay = new Date(sessionDate);
@@ -1527,9 +1692,9 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
             planId: appointment.planId,
             sessionDate: { $gte: startOfDay, $lte: endOfDay },
             startTime: appointment.startTime,
-            sessionType: 'one-to-many'
+            sessionType: "one-to-many",
           },
-          { agoraChannelName: appointment.agoraChannelName }
+          { agoraChannelName: appointment.agoraChannelName },
         );
       } else {
         appointment.agoraChannelName = `booking_${appointment._id.toString()}`;
@@ -1538,16 +1703,16 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
       appointment.agoraChannelName = `booking_${appointment._id.toString()}`;
     }
     await appointment.save();
-  } else if (appointment.sessionType === 'one-to-many') {
+  } else if (appointment.sessionType === "one-to-many") {
     // If channel name exists but this is a group session, ensure all participants use the same channel
     const groupSessionId = (appointment as any).groupSessionId;
     const isDynamicGroupSession = (appointment as any).isDynamicGroupSession;
-    
+
     if (groupSessionId) {
       // Update all appointments in this group to use the same channel
       await Appointment.updateMany(
         { groupSessionId: groupSessionId },
-        { agoraChannelName: appointment.agoraChannelName }
+        { agoraChannelName: appointment.agoraChannelName },
       );
     } else if (appointment.planId && isDynamicGroupSession) {
       // For dynamic group sessions, ensure all appointments for same plan use same channel
@@ -1555,9 +1720,9 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
         {
           planId: appointment.planId,
           isDynamicGroupSession: true,
-          sessionType: 'one-to-many'
+          sessionType: "one-to-many",
         },
-        { agoraChannelName: appointment.agoraChannelName }
+        { agoraChannelName: appointment.agoraChannelName },
       );
     } else if (appointment.planId) {
       // Legacy: For single group session plans with fixed date/time, ensure all appointments for same plan/date/time use same channel
@@ -1571,18 +1736,21 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
           planId: appointment.planId,
           sessionDate: { $gte: startOfDay, $lte: endOfDay },
           startTime: appointment.startTime,
-          sessionType: 'one-to-many'
+          sessionType: "one-to-many",
         },
-        { agoraChannelName: appointment.agoraChannelName }
+        { agoraChannelName: appointment.agoraChannelName },
       );
     }
   }
 
   const channelName = appointment.agoraChannelName as string;
-  const uidSource = isExpert ? appointment.expert._id.toString() : appointment.user._id.toString();
+  const uidSource = isExpert
+    ? appointment.expert._id.toString()
+    : appointment.user._id.toString();
   const uid = deriveAgoraUid(uidSource);
   const role = RtcRole.PUBLISHER;
-  const privilegeExpiredTs = Math.floor(Date.now() / 1000) + (ENV.AGORA_TOKEN_EXPIRY_SECONDS || 7200);
+  const privilegeExpiredTs =
+    Math.floor(Date.now() / 1000) + (ENV.AGORA_TOKEN_EXPIRY_SECONDS || 7200);
 
   const token = RtcTokenBuilder.buildTokenWithUid(
     ENV.AGORA_APP_ID,
@@ -1590,7 +1758,7 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
     channelName,
     uid,
     role,
-    privilegeExpiredTs
+    privilegeExpiredTs,
   );
 
   res.status(200).json({
@@ -1600,10 +1768,10 @@ export const getAgoraToken = asyncHandler(async (req, res) => {
       channelName,
       token,
       uid,
-      role: 'host',
+      role: "host",
       expiresAt: privilegeExpiredTs * 1000,
-      mediaType: isAudioCall ? 'audio' : 'video'
-    }
+      mediaType: isAudioCall ? "audio" : "video",
+    },
   });
 });
 
@@ -1618,7 +1786,7 @@ export const submitFeedback = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
@@ -1626,50 +1794,55 @@ export const submitFeedback = asyncHandler(async (req, res) => {
   if (!parsedRating || Number.isNaN(parsedRating)) {
     return res.status(400).json({
       success: false,
-      message: 'Rating is required'
+      message: "Rating is required",
     });
   }
 
   if (parsedRating < 1 || parsedRating > 5) {
     return res.status(400).json({
       success: false,
-      message: 'Rating must be between 1 and 5'
+      message: "Rating must be between 1 and 5",
     });
   }
 
-  const appointment = await Appointment.findById(id).populate('expert', 'firstName lastName specialization profileImage');
+  const appointment = await Appointment.findById(id).populate(
+    "expert",
+    "firstName lastName specialization profileImage",
+  );
   if (!appointment) {
     return res.status(404).json({
       success: false,
-      message: 'Appointment not found'
+      message: "Appointment not found",
     });
   }
 
   if (appointment.user.toString() !== currentUser._id.toString()) {
     return res.status(403).json({
       success: false,
-      message: 'You do not have permission to review this appointment'
+      message: "You do not have permission to review this appointment",
     });
   }
 
-  if (appointment.status !== 'completed') {
+  if (appointment.status !== "completed") {
     return res.status(400).json({
       success: false,
-      message: 'Feedback can only be submitted after the session is completed'
+      message: "Feedback can only be submitted after the session is completed",
     });
   }
 
-  const trimmedComment = typeof comment === 'string' ? comment.trim() : undefined;
+  const trimmedComment =
+    typeof comment === "string" ? comment.trim() : undefined;
   if (trimmedComment && trimmedComment.length > 1000) {
     return res.status(400).json({
       success: false,
-      message: 'Feedback cannot exceed 1000 characters'
+      message: "Feedback cannot exceed 1000 characters",
     });
   }
 
-  const previousRating = typeof appointment.feedbackRating === 'number'
-    ? appointment.feedbackRating
-    : null;
+  const previousRating =
+    typeof appointment.feedbackRating === "number"
+      ? appointment.feedbackRating
+      : null;
 
   appointment.feedbackRating = parsedRating;
   appointment.feedbackComment = trimmedComment || undefined;
@@ -1685,7 +1858,7 @@ export const submitFeedback = asyncHandler(async (req, res) => {
       let totalScore = currentAverage * currentCount;
       let newCount = currentCount;
 
-      if (typeof previousRating === 'number') {
+      if (typeof previousRating === "number") {
         totalScore = totalScore - previousRating + parsedRating;
       } else {
         totalScore += parsedRating;
@@ -1695,7 +1868,7 @@ export const submitFeedback = asyncHandler(async (req, res) => {
       const newAverage = newCount > 0 ? totalScore / newCount : 0;
       expert.rating = {
         average: Number(newAverage.toFixed(2)),
-        count: newCount
+        count: newCount,
       };
 
       await expert.save();
@@ -1705,9 +1878,9 @@ export const submitFeedback = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      appointment
+      appointment,
     },
-    message: 'Feedback submitted successfully'
+    message: "Feedback submitted successfully",
   });
 });
 
@@ -1721,7 +1894,7 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
@@ -1729,29 +1902,36 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
   if (!appointment) {
     return res.status(404).json({
       success: false,
-      message: 'Appointment not found'
+      message: "Appointment not found",
     });
   }
 
   const userId = currentUser._id.toString();
   const userEmail = currentUser.email || (currentUser as any).email;
 
-  let expertRecord = await Expert.findById(userId).select('_id');
+  let expertRecord = await Expert.findById(userId).select("_id");
   if (!expertRecord && userEmail) {
-    expertRecord = await Expert.findOne({ email: userEmail.toLowerCase() }).select('_id');
+    expertRecord = await Expert.findOne({
+      email: userEmail.toLowerCase(),
+    }).select("_id");
   }
 
-  if (!expertRecord || appointment.expert.toString() !== expertRecord._id.toString()) {
+  if (
+    !expertRecord ||
+    appointment.expert.toString() !== expertRecord._id.toString()
+  ) {
     return res.status(403).json({
       success: false,
-      message: 'You do not have permission to upload a prescription for this appointment'
+      message:
+        "You do not have permission to upload a prescription for this appointment",
     });
   }
 
-  if (appointment.status !== 'completed') {
+  if (appointment.status !== "completed") {
     return res.status(400).json({
       success: false,
-      message: 'Prescriptions can only be uploaded after the session is completed'
+      message:
+        "Prescriptions can only be uploaded after the session is completed",
     });
   }
 
@@ -1759,19 +1939,22 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
   if (!file) {
     return res.status(400).json({
       success: false,
-      message: 'Prescription PDF is required'
+      message: "Prescription PDF is required",
     });
   }
 
-  if (!file.mimetype.includes('pdf')) {
+  if (!file.mimetype.includes("pdf")) {
     return res.status(400).json({
       success: false,
-      message: 'Only PDF files are allowed'
+      message: "Only PDF files are allowed",
     });
   }
 
   if (appointment.prescription?.fileName) {
-    const currentFilePath = getFilePath(appointment.prescription.fileName, 'prescriptions');
+    const currentFilePath = getFilePath(
+      appointment.prescription.fileName,
+      "prescriptions",
+    );
     if (currentFilePath) {
       deleteFile(currentFilePath);
     }
@@ -1782,8 +1965,8 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
     originalName: file.originalname,
     mimeType: file.mimetype,
     size: file.size,
-    url: getFileUrl(file.filename, 'prescriptions') || '',
-    uploadedAt: new Date()
+    url: getFileUrl(file.filename, "prescriptions") || "",
+    uploadedAt: new Date(),
   };
 
   await appointment.save();
@@ -1791,9 +1974,9 @@ export const uploadPrescription = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      prescription: appointment.prescription
+      prescription: appointment.prescription,
     },
-    message: 'Prescription uploaded successfully'
+    message: "Prescription uploaded successfully",
   });
 });
 
@@ -1807,51 +1990,51 @@ export const getUserDetailsForExpert = asyncHandler(async (req, res) => {
   if (!currentUser || !currentUser._id) {
     return res.status(401).json({
       success: false,
-      message: 'User not authenticated'
+      message: "User not authenticated",
     });
   }
 
   // Verify that the current user is an expert
   const expertId = currentUser._id.toString();
-  const expert = await Expert.findById(expertId).select('_id');
-  
+  const expert = await Expert.findById(expertId).select("_id");
+
   if (!expert) {
     return res.status(403).json({
       success: false,
-      message: 'Only experts can access patient details'
+      message: "Only experts can access patient details",
     });
   }
 
   // Verify that this user has an appointment with the expert
   const hasAppointment = await Appointment.findOne({
     expert: expertId,
-    user: userId
+    user: userId,
   });
 
   if (!hasAppointment) {
     return res.status(403).json({
       success: false,
-      message: 'You can only view details of users who have appointments with you'
+      message:
+        "You can only view details of users who have appointments with you",
     });
   }
 
   // Fetch user details including health information
   const user = await User.findById(userId).select(
-    '-password -resetPasswordToken -resetPasswordExpire -otpCode -otpExpire -loginAttempts -lockUntil'
+    "-password -resetPasswordToken -resetPasswordExpire -otpCode -otpExpire -loginAttempts -lockUntil",
   );
 
   if (!user) {
     return res.status(404).json({
       success: false,
-      message: 'User not found'
+      message: "User not found",
     });
   }
 
   res.status(200).json({
     success: true,
     data: {
-      user: user.toObject()
-    }
+      user: user.toObject(),
+    },
   });
 });
-
