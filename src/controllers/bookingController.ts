@@ -41,27 +41,36 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
       const endHour = Math.floor(endTotalMinutes / 60);
       const endMin = endTotalMinutes % 60;
 
-      // Extract date components (interpret in IST)
+      // Get date parts from the sessionDate (which is already in IST)
       const year = sessionDate.getUTCFullYear();
       const month = sessionDate.getUTCMonth();
       const day = sessionDate.getUTCDate();
 
-      // Create date assuming times are in IST, then convert to UTC for comparison
-      // Create in UTC first, then subtract IST offset to get the correct UTC time
-      const startDateTimeIST = new Date(
-        Date.UTC(year, month, day, startHour, startMin, 0, 0),
+      // Create IST datetime by treating the date components as local IST
+      // Then convert to UTC for proper Date object
+      const startDateTimeLocal = new Date(
+        year,
+        month,
+        day,
+        startHour,
+        startMin,
+        0,
+        0,
       );
-      const endDateTimeIST = new Date(
-        Date.UTC(year, month, day, endHour, endMin, 0, 0),
+      const endDateTimeLocal = new Date(
+        year,
+        month,
+        day,
+        endHour,
+        endMin,
+        0,
+        0,
       );
 
-      // Convert IST to UTC by subtracting the offset
-      const startDateTime = new Date(
-        startDateTimeIST.getTime() - IST_OFFSET_MS,
-      );
-      const endDateTime = new Date(endDateTimeIST.getTime() - IST_OFFSET_MS);
-
-      return { startDateTime, endDateTime };
+      return {
+        startDateTime: startDateTimeLocal,
+        endDateTime: endDateTimeLocal,
+      };
     }
   }
 
@@ -70,22 +79,14 @@ const getSessionDateTimes = async (appointment: IAppointment) => {
   const [startHour, startMin] = appointment.startTime.split(":").map(Number);
   const [endHour, endMin] = appointment.endTime.split(":").map(Number);
 
-  // Extract date components (interpret in IST)
+  // Get date parts from sessionDate
   const year = sessionDate.getUTCFullYear();
   const month = sessionDate.getUTCMonth();
   const day = sessionDate.getUTCDate();
 
-  // Create date assuming times are in IST, then convert to UTC for comparison
-  const startDateTimeIST = new Date(
-    Date.UTC(year, month, day, startHour, startMin, 0, 0),
-  );
-  const endDateTimeIST = new Date(
-    Date.UTC(year, month, day, endHour, endMin, 0, 0),
-  );
-
-  // Convert IST to UTC by subtracting the offset
-  const startDateTime = new Date(startDateTimeIST.getTime() - IST_OFFSET_MS);
-  const endDateTime = new Date(endDateTimeIST.getTime() - IST_OFFSET_MS);
+  // Create local datetime (which represents IST in our case)
+  const startDateTime = new Date(year, month, day, startHour, startMin, 0, 0);
+  const endDateTime = new Date(year, month, day, endHour, endMin, 0, 0);
 
   return { startDateTime, endDateTime };
 };
@@ -115,6 +116,17 @@ export const notifyParticipantsOfBooking = async (
       label: "user" | "expert";
       promise: Promise<unknown>;
     }> = [];
+
+    const dateString = startDateTime.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    const timeString = startDateTime.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
 
     if (appointment.user?.email) {
       tasks.push({
@@ -160,6 +172,33 @@ export const notifyParticipantsOfBooking = async (
           notes: appointment.notes,
         }),
       });
+
+      // Send push notification to expert about new booking
+      const expertId = (appointment.expert as any)._id || appointment.expert;
+      const clientName = buildDisplayName(appointment.user, "A client");
+      try {
+        await pushNotificationService.sendToUser(
+          expertId,
+          "New Booking Request",
+          `${clientName} has requested a session for ${dateString} at ${timeString}`,
+          {
+            type: "appointment",
+            subType: "new_booking",
+            id: appointment._id.toString(),
+            clientName,
+            appointmentDate: dateString,
+            appointmentTime: timeString,
+          },
+        );
+        logger.info(
+          `✅ Push notification sent to expert ${expertId} for new booking`,
+        );
+      } catch (pushError) {
+        logger.error(
+          `Failed to send push notification to expert ${expertId}:`,
+          pushError,
+        );
+      }
     }
 
     if (!tasks.length) {

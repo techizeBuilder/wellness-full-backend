@@ -463,6 +463,7 @@ interface SessionReminderEmailOptions {
 }
 
 const formatSessionDateTime = (date: Date) => {
+  // Format the date in IST timezone
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
     month: "long",
@@ -470,6 +471,7 @@ const formatSessionDateTime = (date: Date) => {
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
+    timeZone: "Asia/Kolkata",
   }).format(date);
 };
 
